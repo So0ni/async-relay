@@ -1,0 +1,9 @@
+# Core dependencies
+pyyaml>=6.0.1
+
+# Performance optimization
+uvloop>=0.19.0; sys_platform != 'win32'
+
+# Development dependencies (optional)
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
