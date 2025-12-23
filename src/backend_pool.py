@@ -11,7 +11,7 @@ from src.dns_resolver import DNSResolver
 logger = logging.getLogger(__name__)
 
 
-class NoBackendAvailable(Exception):
+class NoBackendAvailableError(Exception):
     """Raised when no healthy backend is available."""
     pass
 

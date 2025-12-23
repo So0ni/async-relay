@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Literal
 
-from src.backend_pool import BackendPool, NoBackendAvailable
+from src.backend_pool import BackendPool
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +233,7 @@ class RelayService:
                     )
                     break
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         f"[{connection_id}] Backend {backend.host}:{backend.port} "
                         f"({backend_ip}) connection timeout"
@@ -331,7 +331,7 @@ class RelayService:
                             reader.read(BUFFER_SIZE),
                             timeout=IDLE_TIMEOUT,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.debug(
                             f"[{connection_id}] {direction} idle timeout"
                         )

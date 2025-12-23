@@ -88,7 +88,7 @@ def load_config(config_path: str | Path) -> Config:
 
     logger.info(f"Loading configuration from {config_path}")
 
-    with open(config_path, 'r', encoding='utf-8') as f:
+    with open(config_path, encoding='utf-8') as f:
         raw_config = yaml.safe_load(f)
 
     if not raw_config or 'services' not in raw_config:
