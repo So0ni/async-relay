@@ -406,6 +406,11 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
         # Client session tracking: client_addr -> (backend_transport, last_activity)
         self.sessions: dict[tuple[str, int], tuple[asyncio.DatagramTransport, float]] = {}
 
+        # Task management: limit concurrent datagram processing
+        self._max_concurrent_tasks = 1000  # Prevent task explosion under high load
+        self._task_semaphore = asyncio.Semaphore(self._max_concurrent_tasks)
+        self._pending_tasks: set[asyncio.Task[None]] = set()
+
         # Start cleanup task
         self._cleanup_task: asyncio.Task[None] | None = None
 
@@ -427,6 +432,12 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
         if self._cleanup_task:
             self._cleanup_task.cancel()
 
+        # Cancel all pending datagram processing tasks
+        for task in self._pending_tasks:
+            if not task.done():
+                task.cancel()
+        self._pending_tasks.clear()
+
         # Close all session transports
         for session_transport, _ in self.sessions.values():
             session_transport.close()
@@ -443,8 +454,33 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
         self.stats['udp_packets'] += 1
         self.stats['udp_bytes_received'] += len(data)
 
-        # Handle in async context
-        asyncio.create_task(self._handle_datagram(data, addr))
+        # Handle in async context with task tracking
+        task = asyncio.create_task(self._handle_datagram_wrapper(data, addr))
+        self._pending_tasks.add(task)
+        task.add_done_callback(self._pending_tasks.discard)
+
+    async def _handle_datagram_wrapper(self, data: bytes, client_addr: tuple[str, int]) -> None:
+        """
+        Wrapper for datagram handling with concurrency control and error handling.
+
+        Args:
+            data: Datagram data
+            client_addr: Client address
+        """
+        try:
+            # Acquire semaphore to limit concurrent tasks
+            async with self._task_semaphore:
+                await self._handle_datagram(data, client_addr)
+        except asyncio.CancelledError:
+            # Task was cancelled during shutdown, this is expected
+            logger.debug(f"[{self.service_name}] UDP: Datagram task cancelled for {client_addr}")
+            raise
+        except Exception as e:
+            # Log unexpected errors to prevent silent failures
+            logger.error(
+                f"[{self.service_name}] UDP: Unhandled error processing datagram from {client_addr}: {e}",
+                exc_info=True
+            )
 
     async def _handle_datagram(self, data: bytes, client_addr: tuple[str, int]) -> None:
         """
@@ -457,6 +493,9 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
         if self.transport is None:
             logger.error(f"[{self.service_name}] UDP: Transport not initialized")
             return
+
+        backend_transport: asyncio.DatagramTransport | None = None
+        transport_created = False
 
         try:
             # Try to get or create backend connection
@@ -480,20 +519,33 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
             loop = asyncio.get_running_loop()
 
             if client_addr not in self.sessions:
-                # Create new backend connection
-                backend_transport, _ = await loop.create_datagram_endpoint(
-                    lambda: UDPBackendProtocol(
-                        self.service_name,
-                        client_addr,
-                        self.transport,  # type: ignore
-                        self.stats,
-                    ),
-                    remote_addr=(backend_ip, backend_port),
-                )
-                self.sessions[client_addr] = (backend_transport, time.time())
-                logger.debug(
-                    f"[{self.service_name}] UDP: Created session for {client_addr}"
-                )
+                # Create new backend connection with explicit error handling
+                try:
+                    backend_transport, _ = await loop.create_datagram_endpoint(
+                        lambda: UDPBackendProtocol(
+                            self.service_name,
+                            client_addr,
+                            self.transport,  # type: ignore
+                            self.stats,
+                        ),
+                        remote_addr=(backend_ip, backend_port),
+                    )
+                    transport_created = True
+
+                    # Only add to sessions if we successfully created the transport
+                    self.sessions[client_addr] = (backend_transport, time.time())
+                    logger.debug(
+                        f"[{self.service_name}] UDP: Created session for {client_addr}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[{self.service_name}] UDP: Failed to create backend transport for {client_addr}: {e}",
+                        exc_info=True
+                    )
+                    # Clean up the transport if it was created
+                    if backend_transport is not None:
+                        backend_transport.close()
+                    return
             else:
                 # Update last activity time
                 backend_transport, _ = self.sessions[client_addr]
@@ -508,6 +560,9 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
                 f"[{self.service_name}] UDP datagram handling error: {e}",
                 exc_info=True
             )
+            # If we created a transport but failed to add it to sessions, clean it up
+            if transport_created and backend_transport is not None and client_addr not in self.sessions:
+                backend_transport.close()
 
     async def _cleanup_stale_sessions(self) -> None:
         """Background task to clean up idle UDP sessions."""
