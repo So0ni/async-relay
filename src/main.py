@@ -60,6 +60,8 @@ def parse_arguments() -> argparse.Namespace:
 Examples:
   %(prog)s -c config/config.yaml
   %(prog)s -c config/config.yaml --log-level DEBUG
+  %(prog)s -c config/config.yaml --no-reload
+  %(prog)s -c config/config.yaml --reload-delay 5
         """
     )
 
@@ -76,6 +78,20 @@ Examples:
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
         default='INFO',
         help='Logging level (default: INFO)'
+    )
+
+    parser.add_argument(
+        '--no-reload',
+        action='store_true',
+        help='Disable configuration file hot reload'
+    )
+
+    parser.add_argument(
+        '--reload-delay',
+        type=float,
+        default=10.0,
+        metavar='SECONDS',
+        help='Debounce delay in seconds for config reload (default: 10.0)'
     )
 
     parser.add_argument(
@@ -107,7 +123,12 @@ async def main() -> int:
         config = load_config(config_path)
 
         # Create and start service manager
-        manager = ServiceManager(config)
+        manager = ServiceManager(
+            config=config,
+            config_path=str(config_path.absolute()),
+            enable_reload=not args.no_reload,
+            reload_delay=args.reload_delay,
+        )
         await manager.start()
 
         logger.info("Service shutdown complete")
