@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Connection and data transfer timeouts
 CONNECT_TIMEOUT = 5.0  # seconds
-IDLE_TIMEOUT = 300.0  # 5 minutes for idle connections
+IDLE_TIMEOUT = 60.0  # 60 seconds for idle connections
 BUFFER_SIZE = 65536  # 64KB buffer for data transfer
 
 
