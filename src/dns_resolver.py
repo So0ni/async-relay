@@ -27,7 +27,7 @@ class DNSResolver:
         self.ttl = ttl
         self.cache: dict[str, tuple[list[str], float]] = {}
         self._lock = asyncio.Lock()
-        self._refresh_task: asyncio.Task | None = None
+        self._refresh_task: asyncio.Task[None] | None = None
 
         logger.info(f"DNS resolver initialized with TTL={ttl}s")
 

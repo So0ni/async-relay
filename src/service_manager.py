@@ -132,7 +132,7 @@ class ServiceManager:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 loop.add_signal_handler(
                     sig,
-                    lambda s=sig: signal_handler(signal.Signals(s).name)
+                    lambda s=sig: signal_handler(signal.Signals(s).name)  # type: ignore[misc]
                 )
             logger.debug("Signal handlers registered")
         except NotImplementedError:

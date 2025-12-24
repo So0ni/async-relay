@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from typing import Literal
+from typing import Any, Literal
 
 from src.backend_pool import BackendPool
 
@@ -76,7 +76,7 @@ class RelayService:
         self._running = True
 
         # Start servers based on protocol configuration
-        tasks: list[asyncio.Task] = []
+        tasks: list[asyncio.Task[None]] = []
 
         if self.protocol in ('tcp', 'both'):
             tcp_task = asyncio.create_task(self._start_tcp())
@@ -389,7 +389,7 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
     with failover support.
     """
 
-    def __init__(self, service_name: str, pool: BackendPool, stats: dict):
+    def __init__(self, service_name: str, pool: BackendPool, stats: dict[str, Any]):
         """
         Initialize UDP relay protocol.
 
@@ -407,7 +407,7 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
         self.sessions: dict[tuple[str, int], tuple[asyncio.DatagramTransport, float]] = {}
 
         # Start cleanup task
-        self._cleanup_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task[None] | None = None
 
         logger.debug(f"[{service_name}] UDP protocol initialized")
 
@@ -432,7 +432,7 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
             session_transport.close()
         self.sessions.clear()
 
-    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:  # type: ignore[override]
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """
         Handle incoming UDP datagram.
 
@@ -558,7 +558,7 @@ class UDPBackendProtocol(asyncio.DatagramProtocol):
         self.client_transport = client_transport
         self.stats = stats
 
-    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:  # type: ignore[override]
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """
         Handle response from backend.
 
