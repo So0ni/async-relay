@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from src.config import parse_backend
@@ -28,10 +30,18 @@ class Backend:
     resolved_ips: list[str] = field(default_factory=list)
     consecutive_failures: int = 0
     original_index: int = 0
+    marked_unavailable_at: float | None = None  # Timestamp when marked unavailable
+    cooldown_seconds: float = 1800.0  # Cooldown period (default: 30 minutes)
 
     def __repr__(self) -> str:
         ips_str = ','.join(self.resolved_ips) if self.resolved_ips else 'unresolved'
-        return f"Backend({self.host}:{self.port}, ips=[{ips_str}], failures={self.consecutive_failures})"
+        cooldown_str = ''
+        if self.marked_unavailable_at is not None:
+            import time
+            remaining = self.cooldown_seconds - (time.time() - self.marked_unavailable_at)
+            if remaining > 0:
+                cooldown_str = f', cooldown={remaining:.0f}s'
+        return f"Backend({self.host}:{self.port}, ips=[{ips_str}], failures={self.consecutive_failures}{cooldown_str})"
 
 
 class BackendPool:
@@ -45,7 +55,13 @@ class BackendPool:
     - Thread-safe operations for concurrent connections
     """
 
-    def __init__(self, service_name: str, backends: list[str], dns_resolver: DNSResolver):
+    def __init__(
+        self,
+        service_name: str,
+        backends: list[str],
+        dns_resolver: DNSResolver,
+        cooldown_seconds: float = 1800.0,
+    ):
         """
         Initialize backend pool.
 
@@ -53,10 +69,12 @@ class BackendPool:
             service_name: Name of the service (for logging)
             backends: List of backend strings in "host:port" format
             dns_resolver: DNS resolver instance
+            cooldown_seconds: Cooldown period in seconds after second failure (default: 1800)
         """
         self.service_name = service_name
         self.dns_resolver = dns_resolver
         self._lock = asyncio.Lock()
+        self.cooldown_seconds = cooldown_seconds
 
         # Parse and create backend objects
         self.backends: list[Backend] = []
@@ -66,12 +84,31 @@ class BackendPool:
                 host=host,
                 port=port,
                 original_index=idx,
+                cooldown_seconds=cooldown_seconds,
             )
             self.backends.append(backend)
 
         logger.info(
-            f"[{service_name}] Backend pool initialized with {len(self.backends)} backends"
+            f"[{service_name}] Backend pool initialized with {len(self.backends)} backends "
+            f"(cooldown: {cooldown_seconds:.0f}s)"
         )
+
+    def _is_in_cooldown(self, backend: Backend, current_time: float) -> bool:
+        """
+        Check if backend is in cooldown period.
+
+        Args:
+            backend: Backend to check
+            current_time: Current timestamp
+
+        Returns:
+            True if backend is in cooldown, False otherwise
+        """
+        if backend.marked_unavailable_at is None:
+            return False
+
+        elapsed = current_time - backend.marked_unavailable_at
+        return elapsed < backend.cooldown_seconds
 
     async def _ensure_resolved(self, backend: Backend) -> None:
         """
@@ -100,25 +137,58 @@ class BackendPool:
         Get all backends in connection attempt order.
 
         Returns resolved (IP, port, backend) tuples for all backends that
-        successfully resolved. Returns empty list if no backends are available.
+        successfully resolved. Filters out backends in cooldown period.
+        If all backends are in cooldown, returns them anyway as fallback.
 
         Returns:
             List of (ip, port, backend) tuples
         """
         async with self._lock:
             result: list[tuple[str, int, Backend]] = []
+            now = time.time()
+            unavailable_count = 0
+            all_backends_result: list[tuple[str, int, Backend]] = []
 
             for backend in self.backends:
                 # Ensure DNS is resolved
                 await self._ensure_resolved(backend)
 
-                # Add all resolved IPs (prefer first one)
+                # Store all backends (for fallback)
                 if backend.resolved_ips:
-                    result.append((
+                    backend_tuple = (
                         backend.resolved_ips[0],
                         backend.port,
                         backend
-                    ))
+                    )
+                    all_backends_result.append(backend_tuple)
+
+                    # Check if in cooldown period
+                    if self._is_in_cooldown(backend, now):
+                        unavailable_count += 1
+                        if backend.marked_unavailable_at is not None:
+                            remaining = backend.cooldown_seconds - (now - backend.marked_unavailable_at)
+                            logger.debug(
+                                f"[{self.service_name}] Skipping backend {backend.host}:{backend.port} "
+                                f"({remaining:.0f}s remaining in cooldown)"
+                            )
+                        continue
+
+                    # Add to result
+                    result.append(backend_tuple)
+
+            # Log cooldown status
+            if unavailable_count > 0:
+                logger.debug(
+                    f"[{self.service_name}] {unavailable_count} backend(s) in cooldown period"
+                )
+
+            # Fallback: if all backends are in cooldown, return them anyway
+            if not result and all_backends_result:
+                logger.warning(
+                    f"[{self.service_name}] All {len(all_backends_result)} backends in cooldown! "
+                    f"Using fallback strategy - attempting anyway"
+                )
+                result = all_backends_result
 
             return result
 
@@ -126,19 +196,30 @@ class BackendPool:
         """
         Handle successful connection to backend.
 
-        Resets failure counter for the backend.
+        Resets failure counter and clears cooldown status for the backend.
 
         Args:
             backend: Backend that was successfully connected
         """
         async with self._lock:
+            # Check if backend was in cooldown
+            was_in_cooldown = backend.marked_unavailable_at is not None
+
+            if was_in_cooldown and backend.marked_unavailable_at is not None:
+                unavailable_duration = time.time() - backend.marked_unavailable_at
+                logger.info(
+                    f"[{self.service_name}] Backend {backend.host}:{backend.port} recovered "
+                    f"(was unavailable for {unavailable_duration:.1f}s)"
+                )
+                backend.marked_unavailable_at = None
+
             if backend.consecutive_failures > 0:
                 logger.info(
                     f"[{self.service_name}] Backend {backend.host}:{backend.port} "
                     f"reconnected successfully (was failing {backend.consecutive_failures} times)"
                 )
                 backend.consecutive_failures = 0
-            else:
+            elif not was_in_cooldown:
                 logger.debug(
                     f"[{self.service_name}] Backend {backend.host}:{backend.port} "
                     f"connected successfully"
@@ -150,7 +231,7 @@ class BackendPool:
 
         Implements two-strike policy:
         - First failure: Clear DNS cache and force re-resolution
-        - Second failure: Move backend to end of queue
+        - Second failure: Move backend to end of queue and mark unavailable for cooldown period
 
         Args:
             backend: Backend that failed to connect
@@ -175,10 +256,15 @@ class BackendPool:
                 await self._ensure_resolved(backend)
 
             elif backend.consecutive_failures >= 2:
-                # Second failure: Move to end of queue
+                # Second failure: Move to end of queue and mark unavailable
+                now = time.time()
+                backend.marked_unavailable_at = now
+                cooldown_end_time = datetime.fromtimestamp(now + backend.cooldown_seconds)
+
                 logger.warning(
-                    f"[{self.service_name}] Moving backend {backend.host}:{backend.port} "
-                    f"to end of queue after {backend.consecutive_failures} failures"
+                    f"[{self.service_name}] Backend {backend.host}:{backend.port} "
+                    f"marked unavailable for {backend.cooldown_seconds:.0f}s "
+                    f"(until {cooldown_end_time.strftime('%H:%M:%S')})"
                 )
 
                 # Remove from current position and append to end

@@ -81,6 +81,7 @@ class ServiceManager:
                     service_name=service_config.name,
                     backends=service_config.backends,
                     dns_resolver=self.dns_resolver,
+                    cooldown_seconds=service_config.backend_cooldown,
                 )
 
                 # Create relay service
@@ -436,6 +437,7 @@ class ServiceManager:
             service_name=service_config.name,
             backends=service_config.backends,
             dns_resolver=self.dns_resolver,
+            cooldown_seconds=service_config.backend_cooldown,
         )
 
         # Create relay service

@@ -12,6 +12,7 @@ services:
       - "192.168.1.10:80"          # IPv4 address
       - "[2001:db8::1]:80"         # IPv6 address
       - "backup.example.com:80"    # Backup domain
+    backend_cooldown: 1800  # Cooldown period in seconds after 2nd failure (default: 1800 = 30 min)
 
   # DNS forwarder example - UDP only
   - name: "dns-forward"
@@ -23,6 +24,7 @@ services:
       - "dns.google:53"
       - "8.8.8.8:53"
       - "8.8.4.4:53"
+    backend_cooldown: 300  # 5 minutes cooldown for DNS (faster recovery)
 
   # HTTPS proxy example - TCP only
   - name: "https-proxy"
@@ -33,3 +35,4 @@ services:
     backends:
       - "secure.example.com:443"
       - "backup.example.com:443"
+    # backend_cooldown not specified, will use default (1800s)

@@ -24,6 +24,7 @@ class ServiceConfig:
     listen: ListenConfig
     backends: list[str]
     protocol: Literal["tcp", "udp", "both"] = "both"
+    backend_cooldown: float = 1800.0  # Cooldown period in seconds (default: 30 minutes)
 
 
 @dataclass
@@ -128,11 +129,19 @@ def load_config(config_path: str | Path) -> Config:
                     f"Invalid protocol '{protocol}', must be 'tcp', 'udp', or 'both'"
                 )
 
+            # Parse backend cooldown (default: 1800 seconds / 30 minutes)
+            backend_cooldown = float(svc_data.get('backend_cooldown', 1800.0))
+            if backend_cooldown < 0:
+                raise ValueError(
+                    f"Invalid backend_cooldown '{backend_cooldown}', must be >= 0"
+                )
+
             service = ServiceConfig(
                 name=svc_data['name'],
                 listen=listen_config,
                 backends=backends,
                 protocol=protocol,
+                backend_cooldown=backend_cooldown,
             )
 
             services.append(service)
