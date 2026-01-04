@@ -43,6 +43,9 @@ class ConfigWatcher:
         self._observer: Any = None  # watchdog.observers.Observer
         self._event_handler: _ConfigFileEventHandler | None = None
 
+        # Event loop reference (set when start() is called)
+        self._loop: asyncio.AbstractEventLoop | None = None
+
         # Debounce state
         self._debounce_task: asyncio.Task[None] | None = None
         self._pending_reload = False
@@ -57,6 +60,14 @@ class ConfigWatcher:
         if self._observer is not None:
             logger.warning("Config watcher already started")
             return
+
+        # Get event loop reference
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            raise RuntimeError(
+                "ConfigWatcher.start() must be called from within an async context"
+            )
 
         # Create event handler
         self._event_handler = _ConfigFileEventHandler(
@@ -95,6 +106,22 @@ class ConfigWatcher:
         Called by watchdog when config file is modified.
 
         Starts/resets the debounce timer.
+
+        Note: This runs in watchdog's thread, not the asyncio thread.
+        We use call_soon_threadsafe to schedule the task creation.
+        """
+        if not self._loop:
+            logger.error("Event loop not initialized, cannot schedule reload")
+            return
+
+        # Schedule task creation in the event loop thread
+        self._loop.call_soon_threadsafe(self._schedule_debounce)
+
+    def _schedule_debounce(self) -> None:
+        """
+        Schedule or reschedule the debounce task.
+
+        This runs in the event loop thread (called via call_soon_threadsafe).
         """
         # Cancel existing debounce task if running
         if self._debounce_task and not self._debounce_task.done():
@@ -109,7 +136,7 @@ class ConfigWatcher:
                 f"(debounce: {self.debounce_seconds}s)"
             )
 
-        # Start new debounce task
+        # Create new debounce task
         self._debounce_task = asyncio.create_task(self._debounced_reload())
 
     async def _debounced_reload(self) -> None:
