@@ -27,6 +27,7 @@ class Backend:
     """
     host: str  # Original hostname or IP
     port: int
+    host_type: str = "domain"  # "ip" or "domain"
     resolved_ips: list[str] = field(default_factory=list)
     consecutive_failures: int = 0
     original_index: int = 0
@@ -80,9 +81,12 @@ class BackendPool:
         self.backends: list[Backend] = []
         for idx, backend_str in enumerate(backends):
             host, port = parse_backend(backend_str)
+            # Determine if host is IP or domain name (check once at initialization)
+            host_type = "ip" if self.dns_resolver._is_ip_address(host) else "domain"
             backend = Backend(
                 host=host,
                 port=port,
+                host_type=host_type,
                 original_index=idx,
                 cooldown_seconds=cooldown_seconds,
             )
@@ -118,19 +122,27 @@ class BackendPool:
             backend: Backend to resolve
         """
         if not backend.resolved_ips:
-            ips = await self.dns_resolver.resolve(backend.host)
-            backend.resolved_ips = ips
-
-            if ips:
+            if backend.host_type == "ip":
+                # IP address - use directly without DNS resolution
+                backend.resolved_ips = [backend.host]
                 logger.debug(
-                    f"[{self.service_name}] Backend {backend.host}:{backend.port} "
-                    f"resolved to {ips}"
+                    f"[{self.service_name}] Backend {backend.host}:{backend.port} is IP address"
                 )
             else:
-                logger.warning(
-                    f"[{self.service_name}] Backend {backend.host}:{backend.port} "
-                    f"failed to resolve"
-                )
+                # Domain name - perform DNS resolution
+                ips = await self.dns_resolver.resolve(backend.host)
+                backend.resolved_ips = ips
+
+                if ips:
+                    logger.debug(
+                        f"[{self.service_name}] Backend {backend.host}:{backend.port} "
+                        f"resolved to {ips}"
+                    )
+                else:
+                    logger.warning(
+                        f"[{self.service_name}] Backend {backend.host}:{backend.port} "
+                        f"failed to resolve"
+                    )
 
     async def get_backends_in_order(self) -> list[tuple[str, int, Backend]]:
         """
@@ -245,11 +257,12 @@ class BackendPool:
             )
 
             if backend.consecutive_failures == 1:
-                # First failure: Clear DNS cache and re-resolve
-                logger.info(
-                    f"[{self.service_name}] Clearing DNS cache for {backend.host}"
-                )
-                await self.dns_resolver.clear_cache_async(backend.host)
+                # First failure: Clear DNS cache and re-resolve (only for domains)
+                if backend.host_type == "domain":
+                    logger.info(
+                        f"[{self.service_name}] Clearing DNS cache for {backend.host}"
+                    )
+                    await self.dns_resolver.clear_cache_async(backend.host)
                 backend.resolved_ips.clear()
 
                 # Immediately re-resolve
