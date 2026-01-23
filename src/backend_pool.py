@@ -172,57 +172,54 @@ class BackendPool:
 
         Returns resolved (IP, port, backend) tuples for all backends that
         successfully resolved. Filters out backends in cooldown period.
-        If all backends are in cooldown, returns them anyway as fallback.
+        If all backends are in cooldown, returns empty list.
 
         Returns:
-            List of (ip, port, backend) tuples
+            List of (ip, port, backend) tuples. Empty if all backends unavailable.
         """
         async with self._lock:
             result: list[tuple[str, int, Backend]] = []
             now = time.time()
             unavailable_count = 0
-            all_backends_result: list[tuple[str, int, Backend]] = []
 
             for backend in self.backends:
                 # Ensure DNS is resolved
                 await self._ensure_resolved(backend)
 
-                # Store all backends (for fallback)
-                if backend.resolved_ips:
-                    backend_tuple = (
-                        backend.resolved_ips[0],
-                        backend.port,
-                        backend
-                    )
-                    all_backends_result.append(backend_tuple)
+                # Skip backends without resolved IPs
+                if not backend.resolved_ips:
+                    continue
 
-                    # Check if in cooldown period
-                    if self._is_in_cooldown(backend, now):
-                        unavailable_count += 1
-                        if backend.marked_unavailable_at is not None:
-                            remaining = backend.cooldown_seconds - (now - backend.marked_unavailable_at)
-                            logger.debug(
-                                f"[{self.service_name}] Skipping backend {backend.host}:{backend.port} "
-                                f"({remaining:.0f}s remaining in cooldown)"
-                            )
-                        continue
+                # Check if in cooldown period
+                if self._is_in_cooldown(backend, now):
+                    unavailable_count += 1
+                    if backend.marked_unavailable_at is not None:
+                        remaining = backend.cooldown_seconds - (now - backend.marked_unavailable_at)
+                        logger.debug(
+                            f"[{self.service_name}] Skipping backend {backend.host}:{backend.port} "
+                            f"({remaining:.0f}s remaining in cooldown)"
+                        )
+                    continue
 
-                    # Add to result
-                    result.append(backend_tuple)
+                # Add to result
+                backend_tuple = (
+                    backend.resolved_ips[0],
+                    backend.port,
+                    backend
+                )
+                result.append(backend_tuple)
 
-            # Log cooldown status
+            # Log status
             if unavailable_count > 0:
-                logger.debug(
-                    f"[{self.service_name}] {unavailable_count} backend(s) in cooldown period"
-                )
-
-            # Fallback: if all backends are in cooldown, return them anyway
-            if not result and all_backends_result:
-                logger.warning(
-                    f"[{self.service_name}] All {len(all_backends_result)} backends in cooldown! "
-                    f"Using fallback strategy - attempting anyway"
-                )
-                result = all_backends_result
+                if not result:
+                    logger.warning(
+                        f"[{self.service_name}] All {unavailable_count} backend(s) are unavailable "
+                        f"(in cooldown or failed DNS resolution)"
+                    )
+                else:
+                    logger.debug(
+                        f"[{self.service_name}] {unavailable_count} backend(s) in cooldown period"
+                    )
 
             return result
 

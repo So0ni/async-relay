@@ -207,7 +207,8 @@ class RelayService:
 
             if not backends:
                 logger.error(
-                    f"[{connection_id}] No backends available"
+                    f"[{connection_id}] No backends available - rejecting connection "
+                    f"(all backends unavailable or in cooldown)"
                 )
                 return
 
@@ -250,7 +251,8 @@ class RelayService:
             # Check if any backend succeeded
             if not remote_writer or not remote_reader:
                 logger.error(
-                    f"[{connection_id}] All backends failed, closing connection"
+                    f"[{connection_id}] All {len(backends)} backend(s) failed - "
+                    f"rejecting connection"
                 )
                 return
 
@@ -503,7 +505,8 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
 
             if not backends:
                 logger.warning(
-                    f"[{self.service_name}] UDP: No backends available for {client_addr}"
+                    f"[{self.service_name}] UDP: No backends available - "
+                    f"dropping packet from {client_addr}"
                 )
                 return
 
