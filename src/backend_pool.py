@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from src.config import parse_backend
 from src.dns_resolver import DNSResolver
+from src.event_hook import EventContext, EventHook, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class BackendPool:
         protocol: Literal["tcp", "udp", "both"] = "both",
         health_check_interval: float | None = None,
         health_check_timeout: float = 5.0,
+        event_hook: EventHook | None = None,
     ):
         """
         Initialize backend pool.
@@ -77,6 +79,7 @@ class BackendPool:
             protocol: Service protocol type ('tcp', 'udp', or 'both')
             health_check_interval: Health check interval in seconds (None to disable)
             health_check_timeout: Health check timeout in seconds (default: 5)
+            event_hook: Event hook instance (optional)
         """
         self.service_name = service_name
         self.dns_resolver = dns_resolver
@@ -86,6 +89,8 @@ class BackendPool:
         self.health_check_interval = health_check_interval
         self.health_check_timeout = health_check_timeout
         self._health_check_task: asyncio.Task[None] | None = None
+        self.event_hook = event_hook
+        self._all_backends_unavailable = False  # Flag to prevent duplicate events
 
         # Parse and create backend objects
         self.backends: list[Backend] = []
@@ -216,10 +221,21 @@ class BackendPool:
                         f"[{self.service_name}] All {unavailable_count} backend(s) are unavailable "
                         f"(in cooldown or failed DNS resolution)"
                     )
+                    # Trigger all_backends_unavailable event (only once)
+                    if not self._all_backends_unavailable:
+                        self._all_backends_unavailable = True
+                        await self._trigger_event(
+                            event_type='all_backends_unavailable',
+                            backend=None,
+                            available_count=0,
+                        )
                 else:
                     logger.debug(
                         f"[{self.service_name}] {unavailable_count} backend(s) in cooldown period"
                     )
+                    # Reset flag when backends become available again
+                    if self._all_backends_unavailable:
+                        self._all_backends_unavailable = False
 
             return result
 
@@ -243,6 +259,12 @@ class BackendPool:
                     f"(was unavailable for {unavailable_duration:.1f}s)"
                 )
                 backend.marked_unavailable_at = None
+
+                # Trigger backend_recovered event
+                await self._trigger_event(
+                    event_type='backend_recovered',
+                    backend=backend,
+                )
 
             if backend.consecutive_failures > 0:
                 logger.info(
@@ -297,6 +319,12 @@ class BackendPool:
                     f"[{self.service_name}] Backend {backend.host}:{backend.port} "
                     f"marked unavailable for {backend.cooldown_seconds:.0f}s "
                     f"(until {cooldown_end_time.strftime('%H:%M:%S')})"
+                )
+
+                # Trigger backend_failed event
+                await self._trigger_event(
+                    event_type='backend_failed',
+                    backend=backend,
                 )
 
                 # Remove from current position and append to end
@@ -474,3 +502,43 @@ class BackendPool:
                 f"unexpected error: {e}",
                 exc_info=True
             )
+
+    async def _trigger_event(
+        self,
+        event_type: EventType,
+        backend: Backend | None,
+        available_count: int | None = None,
+    ) -> None:
+        """
+        Trigger event hook if configured.
+
+        Args:
+            event_type: Type of event to trigger
+            backend: Backend instance (None for all_backends_unavailable)
+            available_count: Number of available backends (optional, calculated if not provided)
+        """
+        if self.event_hook is None:
+            return
+
+        # Calculate available count if not provided
+        if available_count is None:
+            now = time.time()
+            available_count = sum(
+                1 for b in self.backends
+                if b.resolved_ips and not self._is_in_cooldown(b, now)
+            )
+
+        # Build event context
+        context = EventContext(
+            event_type=event_type,
+            service_name=self.service_name,
+            backend_host=backend.host if backend else None,
+            backend_port=backend.port if backend else None,
+            backend_ip=backend.resolved_ips[0] if backend and backend.resolved_ips else None,
+            failure_count=backend.consecutive_failures if backend else 0,
+            available_count=available_count,
+            total_count=len(self.backends),
+        )
+
+        # Trigger hook asynchronously
+        await self.event_hook.trigger(context)

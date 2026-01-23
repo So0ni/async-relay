@@ -10,6 +10,7 @@ from src.backend_pool import BackendPool
 from src.config import Config, ServiceConfig, load_config
 from src.config_watcher import ConfigWatcher
 from src.dns_resolver import DNSResolver
+from src.event_hook import EventHook
 from src.relay_service import RelayService
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,17 @@ class ServiceManager:
                     health_check_interval = service_config.health_check.interval
                     health_check_timeout = service_config.health_check.timeout
 
+                # Create event hook if configured
+                event_hook = None
+                if service_config.event_hook:
+                    event_hook = EventHook(
+                        service_name=service_config.name,
+                        command=service_config.event_hook.command,
+                        args=service_config.event_hook.args,
+                        events=service_config.event_hook.events,
+                        timeout=service_config.event_hook.timeout,
+                    )
+
                 # Create backend pool
                 backend_pool = BackendPool(
                     service_name=service_config.name,
@@ -92,6 +104,7 @@ class ServiceManager:
                     protocol=service_config.protocol,
                     health_check_interval=health_check_interval,
                     health_check_timeout=health_check_timeout,
+                    event_hook=event_hook,
                 )
 
                 # Create relay service
@@ -489,6 +502,17 @@ class ServiceManager:
             health_check_interval = service_config.health_check.interval
             health_check_timeout = service_config.health_check.timeout
 
+        # Create event hook if configured
+        event_hook = None
+        if service_config.event_hook:
+            event_hook = EventHook(
+                service_name=service_config.name,
+                command=service_config.event_hook.command,
+                args=service_config.event_hook.args,
+                events=service_config.event_hook.events,
+                timeout=service_config.event_hook.timeout,
+            )
+
         # Create backend pool
         backend_pool = BackendPool(
             service_name=service_config.name,
@@ -498,6 +522,7 @@ class ServiceManager:
             protocol=service_config.protocol,
             health_check_interval=health_check_interval,
             health_check_timeout=health_check_timeout,
+            event_hook=event_hook,
         )
 
         # Create relay service

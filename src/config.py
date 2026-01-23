@@ -1,7 +1,7 @@
 """Configuration loader and validator."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -26,6 +26,15 @@ class HealthCheckConfig:
 
 
 @dataclass
+class EventHookConfig:
+    """Event hook configuration."""
+    command: str  # Command to execute (binary or shell script)
+    args: list[str] = field(default_factory=list)  # Command arguments
+    events: list[str] = field(default_factory=list)  # List of events to subscribe to
+    timeout: float = 30.0  # Command execution timeout in seconds (default: 30s)
+
+
+@dataclass
 class ServiceConfig:
     """Service configuration."""
     name: str
@@ -34,6 +43,7 @@ class ServiceConfig:
     protocol: Literal["tcp", "udp", "both"] = "both"
     backend_cooldown: float = 1800.0  # Cooldown period in seconds (default: 30 minutes)
     health_check: HealthCheckConfig | None = None  # Health check configuration (optional)
+    event_hook: EventHookConfig | None = None  # Event hook configuration (optional)
 
 
 @dataclass
@@ -171,6 +181,45 @@ def load_config(config_path: str | Path) -> Config:
                     timeout=timeout,
                 )
 
+            # Parse event hook configuration (optional)
+            event_hook_config: EventHookConfig | None = None
+            if 'event_hook' in svc_data:
+                hook_data = svc_data['event_hook']
+                if not isinstance(hook_data, dict):
+                    raise ValueError("event_hook must be a dictionary")
+
+                if 'command' not in hook_data:
+                    raise ValueError("event_hook must have 'command' field")
+
+                command = str(hook_data['command'])
+                args = hook_data.get('args', [])
+                events = hook_data.get('events', [])
+                timeout = float(hook_data.get('timeout', 30.0))
+
+                if not isinstance(args, list):
+                    raise ValueError("event_hook 'args' must be a list")
+                if not isinstance(events, list):
+                    raise ValueError("event_hook 'events' must be a list")
+                if timeout <= 0:
+                    raise ValueError(
+                        f"Invalid event_hook timeout '{timeout}', must be > 0"
+                    )
+
+                # Validate event types
+                valid_events = {'backend_failed', 'all_backends_unavailable', 'backend_recovered'}
+                for event in events:
+                    if event not in valid_events:
+                        raise ValueError(
+                            f"Invalid event type '{event}', must be one of: {', '.join(valid_events)}"
+                        )
+
+                event_hook_config = EventHookConfig(
+                    command=command,
+                    args=args,
+                    events=events,
+                    timeout=timeout,
+                )
+
             service = ServiceConfig(
                 name=svc_data['name'],
                 listen=listen_config,
@@ -178,6 +227,7 @@ def load_config(config_path: str | Path) -> Config:
                 protocol=protocol,
                 backend_cooldown=backend_cooldown,
                 health_check=health_check_config,
+                event_hook=event_hook_config,
             )
 
             services.append(service)

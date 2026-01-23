@@ -17,6 +17,14 @@ services:
       enabled: true      # Enable health check (default: false)
       interval: 60       # Check interval in seconds (default: 60)
       timeout: 5         # TCP connection timeout in seconds (default: 5)
+    event_hook:          # Event hook for backend state changes (optional)
+      command: "/usr/local/bin/alert-handler"  # Command to execute (binary or script)
+      args: []           # Command arguments (default: [])
+      events:            # List of events to subscribe to
+        - backend_failed              # Triggered when a backend fails twice
+        - all_backends_unavailable    # Triggered when all backends are unavailable
+        - backend_recovered           # Triggered when a backend recovers from cooldown
+      timeout: 30        # Command execution timeout in seconds (default: 30)
 
   # DNS forwarder example - UDP only
   - name: "dns-forward"
@@ -44,3 +52,28 @@ services:
       enabled: true
       interval: 30       # More frequent checks for critical service
       timeout: 3
+
+# Event Hook Environment Variables:
+# When an event is triggered, the following environment variables are passed to the command:
+#
+# Individual variables (for shell script processing):
+#   RELAY_EVENT_TYPE          - Event type: backend_failed, all_backends_unavailable, backend_recovered
+#   RELAY_SERVICE_NAME        - Service name
+#   RELAY_BACKEND_HOST        - Backend hostname (not set for all_backends_unavailable)
+#   RELAY_BACKEND_PORT        - Backend port (not set for all_backends_unavailable)
+#   RELAY_BACKEND_IP          - Resolved backend IP address (not set for all_backends_unavailable)
+#   RELAY_FAILURE_COUNT       - Consecutive failure count (0 for backend_recovered)
+#   RELAY_AVAILABLE_COUNT     - Number of currently available backends
+#   RELAY_TOTAL_COUNT         - Total number of backends
+#   RELAY_TIMESTAMP           - ISO format timestamp (e.g., 2026-01-23T10:30:00+00:00)
+#
+# Complete JSON (for program processing):
+#   RELAY_EVENT_JSON          - Complete event data in JSON format
+#
+# Example shell script handler:
+#   #!/bin/bash
+#   echo "Event: $RELAY_EVENT_TYPE"
+#   echo "Service: $RELAY_SERVICE_NAME"
+#   echo "Backend: $RELAY_BACKEND_HOST:$RELAY_BACKEND_PORT ($RELAY_BACKEND_IP)"
+#   echo "Available backends: $RELAY_AVAILABLE_COUNT / $RELAY_TOTAL_COUNT"
+#   echo "JSON: $RELAY_EVENT_JSON"
