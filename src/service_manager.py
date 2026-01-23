@@ -76,12 +76,22 @@ class ServiceManager:
         # Create services
         for service_config in self.config.services:
             try:
+                # Parse health check configuration
+                health_check_interval = None
+                health_check_timeout = 5.0
+                if service_config.health_check and service_config.health_check.enabled:
+                    health_check_interval = service_config.health_check.interval
+                    health_check_timeout = service_config.health_check.timeout
+
                 # Create backend pool
                 backend_pool = BackendPool(
                     service_name=service_config.name,
                     backends=service_config.backends,
                     dns_resolver=self.dns_resolver,
                     cooldown_seconds=service_config.backend_cooldown,
+                    protocol=service_config.protocol,
+                    health_check_interval=health_check_interval,
+                    health_check_timeout=health_check_timeout,
                 )
 
                 # Create relay service
@@ -119,6 +129,10 @@ class ServiceManager:
         if self._enable_reload:
             self._start_config_watcher()
 
+        # Start health check tasks for all services
+        for service in self.services:
+            await service.pool.start_health_check()
+
         # Start all services
         service_tasks = [
             asyncio.create_task(service.start())
@@ -150,6 +164,10 @@ class ServiceManager:
         if self._config_watcher:
             self._config_watcher.stop()
             self._config_watcher = None
+
+        # Stop health check tasks
+        health_check_tasks = [service.pool.stop_health_check() for service in self.services]
+        await asyncio.gather(*health_check_tasks, return_exceptions=True)
 
         # Stop all relay services
         stop_tasks = [service.stop() for service in self.services]
@@ -349,12 +367,34 @@ class ServiceManager:
         Returns:
             True if configurations are identical, False otherwise
         """
-        return (
-            old.listen.address == new.listen.address
-            and old.listen.port == new.listen.port
-            and old.protocol == new.protocol
-            and old.backends == new.backends
-        )
+        # Compare basic fields
+        if (
+            old.listen.address != new.listen.address
+            or old.listen.port != new.listen.port
+            or old.protocol != new.protocol
+            or old.backends != new.backends
+            or old.backend_cooldown != new.backend_cooldown
+        ):
+            return False
+
+        # Compare health check configuration
+        old_hc = old.health_check
+        new_hc = new.health_check
+
+        # Both None or both not None
+        if (old_hc is None) != (new_hc is None):
+            return False
+
+        # If both are not None, compare fields
+        if old_hc is not None and new_hc is not None:
+            if (
+                old_hc.enabled != new_hc.enabled
+                or old_hc.interval != new_hc.interval
+                or old_hc.timeout != new_hc.timeout
+            ):
+                return False
+
+        return True
 
     async def _apply_config_changes(
         self,
@@ -378,6 +418,9 @@ class ServiceManager:
                     logger.info(f"Stopping service: {comparison.name} (removed)")
                     service = self._services_dict.get(comparison.name)
                     if service:
+                        # Stop health check first
+                        await service.pool.stop_health_check()
+                        # Stop relay service
                         await service.stop()
                         self.services.remove(service)
                         del self._services_dict[comparison.name]
@@ -390,6 +433,9 @@ class ServiceManager:
                     # Stop old service
                     old_service = self._services_dict.get(comparison.name)
                     if old_service:
+                        # Stop health check first
+                        await old_service.pool.stop_health_check()
+                        # Stop relay service
                         await old_service.stop()
                         self.services.remove(old_service)
                         logger.info(f"Service '{comparison.name}' stopped")
@@ -400,6 +446,8 @@ class ServiceManager:
                         self.services.append(new_service)
                         self._services_dict[comparison.name] = new_service
 
+                        # Start health check
+                        await new_service.pool.start_health_check()
                         # Start service in background
                         asyncio.create_task(new_service.start())
                         logger.info(f"Service '{comparison.name}' restarted with new config")
@@ -412,6 +460,8 @@ class ServiceManager:
                         self.services.append(new_service)
                         self._services_dict[comparison.name] = new_service
 
+                        # Start health check
+                        await new_service.pool.start_health_check()
                         # Start service in background
                         asyncio.create_task(new_service.start())
                         logger.info(f"Service '{comparison.name}' started")
@@ -432,12 +482,22 @@ class ServiceManager:
         Returns:
             Created relay service
         """
+        # Parse health check configuration
+        health_check_interval = None
+        health_check_timeout = 5.0
+        if service_config.health_check and service_config.health_check.enabled:
+            health_check_interval = service_config.health_check.interval
+            health_check_timeout = service_config.health_check.timeout
+
         # Create backend pool
         backend_pool = BackendPool(
             service_name=service_config.name,
             backends=service_config.backends,
             dns_resolver=self.dns_resolver,
             cooldown_seconds=service_config.backend_cooldown,
+            protocol=service_config.protocol,
+            health_check_interval=health_check_interval,
+            health_check_timeout=health_check_timeout,
         )
 
         # Create relay service

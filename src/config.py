@@ -18,6 +18,14 @@ class ListenConfig:
 
 
 @dataclass
+class HealthCheckConfig:
+    """Health check configuration."""
+    enabled: bool = False
+    interval: float = 60.0  # Health check interval in seconds (default: 60s)
+    timeout: float = 5.0  # Single health check timeout (default: 5s)
+
+
+@dataclass
 class ServiceConfig:
     """Service configuration."""
     name: str
@@ -25,6 +33,7 @@ class ServiceConfig:
     backends: list[str]
     protocol: Literal["tcp", "udp", "both"] = "both"
     backend_cooldown: float = 1800.0  # Cooldown period in seconds (default: 30 minutes)
+    health_check: HealthCheckConfig | None = None  # Health check configuration (optional)
 
 
 @dataclass
@@ -136,12 +145,39 @@ def load_config(config_path: str | Path) -> Config:
                     f"Invalid backend_cooldown '{backend_cooldown}', must be >= 0"
                 )
 
+            # Parse health check configuration (optional)
+            health_check_config: HealthCheckConfig | None = None
+            if 'health_check' in svc_data:
+                hc_data = svc_data['health_check']
+                if not isinstance(hc_data, dict):
+                    raise ValueError("health_check must be a dictionary")
+
+                enabled = bool(hc_data.get('enabled', False))
+                interval = float(hc_data.get('interval', 60.0))
+                timeout = float(hc_data.get('timeout', 5.0))
+
+                if interval <= 0:
+                    raise ValueError(
+                        f"Invalid health_check interval '{interval}', must be > 0"
+                    )
+                if timeout <= 0 or timeout > interval:
+                    raise ValueError(
+                        f"Invalid health_check timeout '{timeout}', must be > 0 and <= interval"
+                    )
+
+                health_check_config = HealthCheckConfig(
+                    enabled=enabled,
+                    interval=interval,
+                    timeout=timeout,
+                )
+
             service = ServiceConfig(
                 name=svc_data['name'],
                 listen=listen_config,
                 backends=backends,
                 protocol=protocol,
                 backend_cooldown=backend_cooldown,
+                health_check=health_check_config,
             )
 
             services.append(service)

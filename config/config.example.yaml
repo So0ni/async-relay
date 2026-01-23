@@ -13,6 +13,10 @@ services:
       - "[2001:db8::1]:80"         # IPv6 address
       - "backup.example.com:80"    # Backup domain
     backend_cooldown: 1800  # Cooldown period in seconds after 2nd failure (default: 1800 = 30 min)
+    health_check:        # Proactive health check (optional, only for TCP services)
+      enabled: true      # Enable health check (default: false)
+      interval: 60       # Check interval in seconds (default: 60)
+      timeout: 5         # TCP connection timeout in seconds (default: 5)
 
   # DNS forwarder example - UDP only
   - name: "dns-forward"
@@ -26,7 +30,7 @@ services:
       - "8.8.4.4:53"
     backend_cooldown: 300  # 5 minutes cooldown for DNS (faster recovery)
 
-  # HTTPS proxy example - TCP only
+  # HTTPS proxy example - TCP only with health check
   - name: "https-proxy"
     protocol: "tcp"      # Only forward TCP traffic
     listen:
@@ -36,3 +40,7 @@ services:
       - "secure.example.com:443"
       - "backup.example.com:443"
     # backend_cooldown not specified, will use default (1800s)
+    health_check:        # Health check enabled for TCP service
+      enabled: true
+      interval: 30       # More frequent checks for critical service
+      timeout: 3

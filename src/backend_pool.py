@@ -5,7 +5,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from src.config import parse_backend
 from src.dns_resolver import DNSResolver
@@ -62,6 +62,9 @@ class BackendPool:
         backends: list[str],
         dns_resolver: DNSResolver,
         cooldown_seconds: float = 1800.0,
+        protocol: Literal["tcp", "udp", "both"] = "both",
+        health_check_interval: float | None = None,
+        health_check_timeout: float = 5.0,
     ):
         """
         Initialize backend pool.
@@ -71,11 +74,18 @@ class BackendPool:
             backends: List of backend strings in "host:port" format
             dns_resolver: DNS resolver instance
             cooldown_seconds: Cooldown period in seconds after second failure (default: 1800)
+            protocol: Service protocol type ('tcp', 'udp', or 'both')
+            health_check_interval: Health check interval in seconds (None to disable)
+            health_check_timeout: Health check timeout in seconds (default: 5)
         """
         self.service_name = service_name
         self.dns_resolver = dns_resolver
         self._lock = asyncio.Lock()
         self.cooldown_seconds = cooldown_seconds
+        self.protocol = protocol
+        self.health_check_interval = health_check_interval
+        self.health_check_timeout = health_check_timeout
+        self._health_check_task: asyncio.Task[None] | None = None
 
         # Parse and create backend objects
         self.backends: list[Backend] = []
@@ -96,6 +106,18 @@ class BackendPool:
             f"[{service_name}] Backend pool initialized with {len(self.backends)} backends "
             f"(cooldown: {cooldown_seconds:.0f}s)"
         )
+
+        # Start health check if enabled (only for TCP services)
+        if health_check_interval and protocol in ('tcp', 'both'):
+            logger.info(
+                f"[{service_name}] Health check enabled: "
+                f"interval={health_check_interval:.0f}s, timeout={health_check_timeout:.0f}s"
+            )
+            # Health check task will be started after event loop is running
+        elif health_check_interval and protocol == 'udp':
+            logger.info(
+                f"[{service_name}] Health check disabled for UDP-only service"
+            )
 
     def _is_in_cooldown(self, backend: Backend, current_time: float) -> bool:
         """
@@ -316,4 +338,142 @@ class BackendPool:
                 'service': self.service_name,
                 'total_backends': len(self.backends),
                 'backends': backends_info,
+                'health_check_enabled': self._health_check_task is not None,
             }
+
+    async def start_health_check(self) -> None:
+        """Start health check task if configured."""
+        if self.health_check_interval and self.protocol in ('tcp', 'both'):
+            if self._health_check_task is None or self._health_check_task.done():
+                self._health_check_task = asyncio.create_task(self._health_check_loop())
+                logger.info(f"[{self.service_name}] Health check task started")
+
+    async def stop_health_check(self) -> None:
+        """Stop health check task."""
+        if self._health_check_task and not self._health_check_task.done():
+            self._health_check_task.cancel()
+            try:
+                await self._health_check_task
+            except asyncio.CancelledError:
+                pass
+            logger.info(f"[{self.service_name}] Health check task stopped")
+
+    async def _health_check_loop(self) -> None:
+        """
+        Background task for periodic health checking.
+
+        Probes each backend with TCP connection and updates backend status
+        using existing failure/success handlers.
+        """
+        try:
+            logger.info(
+                f"[{self.service_name}] Health check loop started "
+                f"(interval: {self.health_check_interval}s)"
+            )
+
+            while True:
+                # Wait for the next check interval
+                await asyncio.sleep(self.health_check_interval)  # type: ignore[arg-type]
+
+                # Perform health check on all backends
+                await self._perform_health_check()
+
+        except asyncio.CancelledError:
+            logger.debug(f"[{self.service_name}] Health check loop cancelled")
+            raise
+
+        except Exception as e:
+            logger.error(
+                f"[{self.service_name}] Health check loop error: {e}",
+                exc_info=True
+            )
+
+    async def _perform_health_check(self) -> None:
+        """
+        Perform health check on all backends.
+
+        Skips backends in cooldown period to reduce overhead.
+        """
+        now = time.time()
+
+        # Get snapshot of backends to check (avoid holding lock during checks)
+        async with self._lock:
+            backends_to_check = [
+                backend for backend in self.backends
+                if not self._is_in_cooldown(backend, now)
+            ]
+
+        if not backends_to_check:
+            logger.debug(
+                f"[{self.service_name}] Health check: all backends in cooldown, skipping"
+            )
+            return
+
+        logger.debug(
+            f"[{self.service_name}] Health check: probing {len(backends_to_check)} backend(s)"
+        )
+
+        # Check each backend
+        for backend in backends_to_check:
+            await self._check_backend_health(backend)
+
+    async def _check_backend_health(self, backend: Backend) -> None:
+        """
+        Check health of a single backend using TCP connection.
+
+        Args:
+            backend: Backend to check
+        """
+        # Ensure backend is resolved
+        async with self._lock:
+            await self._ensure_resolved(backend)
+
+        if not backend.resolved_ips:
+            logger.warning(
+                f"[{self.service_name}] Health check: {backend.host}:{backend.port} "
+                f"has no resolved IPs, skipping"
+            )
+            return
+
+        # Use first resolved IP for health check
+        backend_ip = backend.resolved_ips[0]
+
+        try:
+            # Attempt TCP connection with timeout
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(backend_ip, backend.port),
+                timeout=self.health_check_timeout,
+            )
+
+            # Close connection immediately
+            writer.close()
+            await writer.wait_closed()
+
+            # Success - update backend status
+            await self.on_connect_success(backend)
+
+            logger.debug(
+                f"[{self.service_name}] Health check: {backend.host}:{backend.port} "
+                f"({backend_ip}) is healthy"
+            )
+
+        except TimeoutError:
+            logger.warning(
+                f"[{self.service_name}] Health check: {backend.host}:{backend.port} "
+                f"({backend_ip}) timeout"
+            )
+            await self.on_connect_failure(backend)
+
+        except (ConnectionRefusedError, OSError) as e:
+            logger.warning(
+                f"[{self.service_name}] Health check: {backend.host}:{backend.port} "
+                f"({backend_ip}) failed: {e}"
+            )
+            await self.on_connect_failure(backend)
+
+        except Exception as e:
+            logger.error(
+                f"[{self.service_name}] Health check: {backend.host}:{backend.port} "
+                f"unexpected error: {e}",
+                exc_info=True
+            )
