@@ -53,13 +53,13 @@ class RelayService:
 
         # Statistics
         self.stats = {
-            'tcp_connections': 0,
-            'tcp_active': 0,
-            'tcp_bytes_sent': 0,
-            'tcp_bytes_received': 0,
-            'udp_packets': 0,
-            'udp_bytes_sent': 0,
-            'udp_bytes_received': 0,
+            "tcp_connections": 0,
+            "tcp_active": 0,
+            "tcp_bytes_sent": 0,
+            "tcp_bytes_received": 0,
+            "udp_packets": 0,
+            "udp_bytes_sent": 0,
+            "udp_bytes_received": 0,
         }
 
         logger.info(
@@ -78,11 +78,11 @@ class RelayService:
         # Start servers based on protocol configuration
         tasks: list[asyncio.Task[None]] = []
 
-        if self.protocol in ('tcp', 'both'):
+        if self.protocol in ("tcp", "both"):
             tcp_task = asyncio.create_task(self._start_tcp())
             tasks.append(tcp_task)
 
-        if self.protocol in ('udp', 'both'):
+        if self.protocol in ("udp", "both"):
             udp_task = asyncio.create_task(self._start_udp())
             tasks.append(udp_task)
 
@@ -128,7 +128,7 @@ class RelayService:
                 reuse_port=True,  # Allow UDP to bind same port
             )
 
-            addrs = ', '.join(str(sock.getsockname()) for sock in self._tcp_server.sockets)
+            addrs = ", ".join(str(sock.getsockname()) for sock in self._tcp_server.sockets)
             logger.info(f"[{self.name}] TCP server listening on {addrs}")
 
             async with self._tcp_server:
@@ -137,10 +137,7 @@ class RelayService:
         except asyncio.CancelledError:
             logger.debug(f"[{self.name}] TCP server cancelled")
         except Exception as e:
-            logger.error(
-                f"[{self.name}] TCP server error: {e}",
-                exc_info=True
-            )
+            logger.error(f"[{self.name}] TCP server error: {e}", exc_info=True)
             raise
 
     async def _start_udp(self) -> None:
@@ -158,8 +155,7 @@ class RelayService:
             self._udp_transport = transport
 
             logger.info(
-                f"[{self.name}] UDP server listening on "
-                f"{self.listen_addr}:{self.listen_port}"
+                f"[{self.name}] UDP server listening on {self.listen_addr}:{self.listen_port}"
             )
 
             # Keep UDP server running
@@ -169,10 +165,7 @@ class RelayService:
         except asyncio.CancelledError:
             logger.debug(f"[{self.name}] UDP server cancelled")
         except Exception as e:
-            logger.error(
-                f"[{self.name}] UDP server error: {e}",
-                exc_info=True
-            )
+            logger.error(f"[{self.name}] UDP server error: {e}", exc_info=True)
             raise
 
     async def _handle_tcp_client(
@@ -190,11 +183,11 @@ class RelayService:
             client_reader: Client stream reader
             client_writer: Client stream writer
         """
-        client_addr = client_writer.get_extra_info('peername')
+        client_addr = client_writer.get_extra_info("peername")
         connection_id = f"{client_addr}->{self.name}"
 
-        self.stats['tcp_connections'] += 1
-        self.stats['tcp_active'] += 1
+        self.stats["tcp_connections"] += 1
+        self.stats["tcp_active"] += 1
 
         logger.info(f"[{connection_id}] New TCP connection")
 
@@ -270,14 +263,11 @@ class RelayService:
             raise
 
         except Exception as e:
-            logger.error(
-                f"[{connection_id}] Unexpected error: {e}",
-                exc_info=True
-            )
+            logger.error(f"[{connection_id}] Unexpected error: {e}", exc_info=True)
 
         finally:
             # Cleanup: ensure both sides are closed
-            self.stats['tcp_active'] -= 1
+            self.stats["tcp_active"] -= 1
 
             if client_writer:
                 try:
@@ -334,16 +324,12 @@ class RelayService:
                             timeout=IDLE_TIMEOUT,
                         )
                     except TimeoutError:
-                        logger.debug(
-                            f"[{connection_id}] {direction} idle timeout"
-                        )
+                        logger.debug(f"[{connection_id}] {direction} idle timeout")
                         break
 
                     if not data:
                         # EOF received
-                        logger.debug(
-                            f"[{connection_id}] {direction} EOF received"
-                        )
+                        logger.debug(f"[{connection_id}] {direction} EOF received")
                         break
 
                     # Write data
@@ -351,21 +337,16 @@ class RelayService:
                     await writer.drain()
 
                     # Update stats
-                    if direction == 'client->remote':
-                        self.stats['tcp_bytes_sent'] += len(data)
+                    if direction == "client->remote":
+                        self.stats["tcp_bytes_sent"] += len(data)
                     else:
-                        self.stats['tcp_bytes_received'] += len(data)
+                        self.stats["tcp_bytes_received"] += len(data)
 
             except (ConnectionResetError, BrokenPipeError) as e:
-                logger.debug(
-                    f"[{connection_id}] {direction} connection error: {e}"
-                )
+                logger.debug(f"[{connection_id}] {direction} connection error: {e}")
 
             except Exception as e:
-                logger.warning(
-                    f"[{connection_id}] {direction} error: {e}",
-                    exc_info=True
-                )
+                logger.warning(f"[{connection_id}] {direction} error: {e}", exc_info=True)
 
             finally:
                 # Signal EOF to other side
@@ -377,8 +358,8 @@ class RelayService:
 
         # Run both directions concurrently
         await asyncio.gather(
-            forward(client_reader, remote_writer, 'client->remote'),
-            forward(remote_reader, client_writer, 'remote->client'),
+            forward(client_reader, remote_writer, "client->remote"),
+            forward(remote_reader, client_writer, "remote->client"),
             return_exceptions=True,
         )
 
@@ -453,8 +434,8 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
             data: Received data
             addr: Client address tuple (ip, port)
         """
-        self.stats['udp_packets'] += 1
-        self.stats['udp_bytes_received'] += len(data)
+        self.stats["udp_packets"] += 1
+        self.stats["udp_bytes_received"] += len(data)
 
         # Handle in async context with task tracking
         task = asyncio.create_task(self._handle_datagram_wrapper(data, addr))
@@ -481,7 +462,7 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
             # Log unexpected errors to prevent silent failures
             logger.error(
                 f"[{self.service_name}] UDP: Unhandled error processing datagram from {client_addr}: {e}",
-                exc_info=True
+                exc_info=True,
             )
 
     async def _handle_datagram(self, data: bytes, client_addr: tuple[str, int]) -> None:
@@ -537,13 +518,11 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
 
                     # Only add to sessions if we successfully created the transport
                     self.sessions[client_addr] = (backend_transport, time.time())
-                    logger.debug(
-                        f"[{self.service_name}] UDP: Created session for {client_addr}"
-                    )
+                    logger.debug(f"[{self.service_name}] UDP: Created session for {client_addr}")
                 except Exception as e:
                     logger.error(
                         f"[{self.service_name}] UDP: Failed to create backend transport for {client_addr}: {e}",
-                        exc_info=True
+                        exc_info=True,
                     )
                     # Clean up the transport if it was created
                     if backend_transport is not None:
@@ -556,15 +535,16 @@ class UDPRelayProtocol(asyncio.DatagramProtocol):
 
             # Forward packet to backend
             backend_transport.sendto(data)
-            self.stats['udp_bytes_sent'] += len(data)
+            self.stats["udp_bytes_sent"] += len(data)
 
         except Exception as e:
-            logger.error(
-                f"[{self.service_name}] UDP datagram handling error: {e}",
-                exc_info=True
-            )
+            logger.error(f"[{self.service_name}] UDP datagram handling error: {e}", exc_info=True)
             # If we created a transport but failed to add it to sessions, clean it up
-            if transport_created and backend_transport is not None and client_addr not in self.sessions:
+            if (
+                transport_created
+                and backend_transport is not None
+                and client_addr not in self.sessions
+            ):
                 backend_transport.close()
 
     async def _cleanup_stale_sessions(self) -> None:
@@ -627,7 +607,7 @@ class UDPBackendProtocol(asyncio.DatagramProtocol):
         try:
             # Forward response back to client
             self.client_transport.sendto(data, self.client_addr)
-            self.stats['udp_bytes_received'] += len(data)
+            self.stats["udp_bytes_received"] += len(data)
 
             logger.debug(
                 f"[{self.service_name}] UDP: Forwarded {len(data)} bytes "
@@ -635,13 +615,8 @@ class UDPBackendProtocol(asyncio.DatagramProtocol):
             )
 
         except Exception as e:
-            logger.error(
-                f"[{self.service_name}] UDP backend response error: {e}",
-                exc_info=True
-            )
+            logger.error(f"[{self.service_name}] UDP backend response error: {e}", exc_info=True)
 
     def error_received(self, exc: Exception) -> None:
         """Handle protocol errors."""
-        logger.warning(
-            f"[{self.service_name}] UDP backend protocol error: {exc}"
-        )
+        logger.warning(f"[{self.service_name}] UDP backend protocol error: {exc}")

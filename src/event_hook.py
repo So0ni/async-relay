@@ -17,6 +17,7 @@ EventType = Literal["backend_failed", "all_backends_unavailable", "backend_recov
 @dataclass
 class EventContext:
     """Context information for an event."""
+
     event_type: EventType  # Event type: backend_failed, all_backends_unavailable, backend_recovered
     service_name: str  # Service name
     backend_host: str | None = None  # Backend hostname (None for all_backends_unavailable)
@@ -96,9 +97,7 @@ class EventHook:
             )
             return
 
-        logger.info(
-            f"[{self.service_name}] Triggering event hook for '{context.event_type}'"
-        )
+        logger.info(f"[{self.service_name}] Triggering event hook for '{context.event_type}'")
 
         # Execute in background task
         task = asyncio.create_task(self._execute(context))
@@ -171,17 +170,13 @@ class EventHook:
                     logger.debug(f"[{self.service_name}] Error killing hook process: {e}")
 
         except FileNotFoundError:
-            logger.error(
-                f"[{self.service_name}] Event hook command not found: {self.command}"
-            )
+            logger.error(f"[{self.service_name}] Event hook command not found: {self.command}")
         except PermissionError:
-            logger.error(
-                f"[{self.service_name}] Event hook command not executable: {self.command}"
-            )
+            logger.error(f"[{self.service_name}] Event hook command not executable: {self.command}")
         except Exception as e:
             logger.error(
                 f"[{self.service_name}] Event hook execution error for '{context.event_type}': {e}",
-                exc_info=True
+                exc_info=True,
             )
 
     def _build_env_vars(self, context: EventContext) -> dict[str, str]:
@@ -195,40 +190,40 @@ class EventHook:
             Dictionary of environment variables
         """
         env_vars = {
-            'RELAY_EVENT_TYPE': context.event_type,
-            'RELAY_SERVICE_NAME': context.service_name,
-            'RELAY_FAILURE_COUNT': str(context.failure_count),
-            'RELAY_AVAILABLE_COUNT': str(context.available_count),
-            'RELAY_TOTAL_COUNT': str(context.total_count),
-            'RELAY_TIMESTAMP': context.timestamp or '',
+            "RELAY_EVENT_TYPE": context.event_type,
+            "RELAY_SERVICE_NAME": context.service_name,
+            "RELAY_FAILURE_COUNT": str(context.failure_count),
+            "RELAY_AVAILABLE_COUNT": str(context.available_count),
+            "RELAY_TOTAL_COUNT": str(context.total_count),
+            "RELAY_TIMESTAMP": context.timestamp or "",
         }
 
         # Add backend-specific variables (if available)
         if context.backend_host is not None:
-            env_vars['RELAY_BACKEND_HOST'] = context.backend_host
+            env_vars["RELAY_BACKEND_HOST"] = context.backend_host
         if context.backend_port is not None:
-            env_vars['RELAY_BACKEND_PORT'] = str(context.backend_port)
+            env_vars["RELAY_BACKEND_PORT"] = str(context.backend_port)
         if context.backend_ip is not None:
-            env_vars['RELAY_BACKEND_IP'] = context.backend_ip
+            env_vars["RELAY_BACKEND_IP"] = context.backend_ip
 
         # Add complete JSON representation
         event_data: dict[str, Any] = {
-            'event': context.event_type,
-            'service': context.service_name,
-            'failure_count': context.failure_count,
-            'available_count': context.available_count,
-            'total_count': context.total_count,
-            'timestamp': context.timestamp,
+            "event": context.event_type,
+            "service": context.service_name,
+            "failure_count": context.failure_count,
+            "available_count": context.available_count,
+            "total_count": context.total_count,
+            "timestamp": context.timestamp,
         }
 
         if context.backend_host is not None:
-            event_data['backend'] = {
-                'host': context.backend_host,
-                'port': context.backend_port,
-                'ip': context.backend_ip,
+            event_data["backend"] = {
+                "host": context.backend_host,
+                "port": context.backend_port,
+                "ip": context.backend_ip,
             }
 
-        env_vars['RELAY_EVENT_JSON'] = json.dumps(event_data, ensure_ascii=False)
+        env_vars["RELAY_EVENT_JSON"] = json.dumps(event_data, ensure_ascii=False)
 
         return env_vars
 

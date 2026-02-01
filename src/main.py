@@ -8,12 +8,12 @@ from pathlib import Path
 
 try:
     import uvloop
+
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     UVLOOP_AVAILABLE = True
 except ImportError:
     UVLOOP_AVAILABLE = False
 
-from src.config import load_config
 from src.service_manager import ServiceManager
 
 
@@ -29,15 +29,13 @@ def setup_logging(log_level: str = "INFO") -> None:
     # Configure root logger
     logging.basicConfig(
         level=level,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
 
     # Set asyncio log level to WARNING to reduce noise
-    logging.getLogger('asyncio').setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)
     if UVLOOP_AVAILABLE:
@@ -54,7 +52,7 @@ def parse_arguments() -> argparse.Namespace:
         Parsed arguments
     """
     parser = argparse.ArgumentParser(
-        description='TCP/UDP Relay Service with automatic failover',
+        description="TCP/UDP Relay Service with automatic failover",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -62,43 +60,38 @@ Examples:
   %(prog)s -c config/config.yaml --log-level DEBUG
   %(prog)s -c config/config.yaml --no-reload
   %(prog)s -c config/config.yaml --reload-delay 5
-        """
+        """,
     )
 
     parser.add_argument(
-        '-c', '--config',
+        "-c",
+        "--config",
         type=str,
-        default='config/config.yaml',
-        help='Path to configuration file (default: config/config.yaml)'
+        default="config/config.yaml",
+        help="Path to configuration file (default: config/config.yaml)",
     )
 
     parser.add_argument(
-        '--log-level',
+        "--log-level",
         type=str,
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        default='INFO',
-        help='Logging level (default: INFO)'
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging level (default: INFO)",
     )
 
     parser.add_argument(
-        '--no-reload',
-        action='store_true',
-        help='Disable configuration file hot reload'
+        "--no-reload", action="store_true", help="Disable configuration file hot reload"
     )
 
     parser.add_argument(
-        '--reload-delay',
+        "--reload-delay",
         type=float,
         default=10.0,
-        metavar='SECONDS',
-        help='Debounce delay in seconds for config reload (default: 10.0)'
+        metavar="SECONDS",
+        help="Debounce delay in seconds for config reload (default: 10.0)",
     )
 
-    parser.add_argument(
-        '--version',
-        action='version',
-        version='%(prog)s 1.0.0'
-    )
+    parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
 
     return parser.parse_args()
 
@@ -120,12 +113,19 @@ async def main() -> int:
         config_path = Path(args.config)
         logger.info(f"Loading configuration from {config_path.absolute()}")
 
-        config = load_config(config_path)
+        # Create runtime config manager
+        from src.runtime_config import RuntimeConfigManager
+
+        runtime_config_manager = RuntimeConfigManager(str(config_path.absolute()))
+
+        # Load active configuration (checks hash, uses runtime.yaml if valid)
+        config = runtime_config_manager.load_active_config()
 
         # Create and start service manager
         manager = ServiceManager(
             config=config,
             config_path=str(config_path.absolute()),
+            runtime_config_manager=runtime_config_manager,
             enable_reload=not args.no_reload,
             reload_delay=args.reload_delay,
         )
@@ -164,5 +164,5 @@ def run() -> None:
         sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run()

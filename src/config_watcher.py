@@ -51,8 +51,7 @@ class ConfigWatcher:
         self._pending_reload = False
 
         logger.info(
-            f"Config watcher initialized: {self.config_path} "
-            f"(debounce: {debounce_seconds}s)"
+            f"Config watcher initialized: {self.config_path} (debounce: {debounce_seconds}s)"
         )
 
     def start(self) -> None:
@@ -65,9 +64,7 @@ class ConfigWatcher:
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
-            raise RuntimeError(
-                "ConfigWatcher.start() must be called from within an async context"
-            )
+            raise RuntimeError("ConfigWatcher.start() must be called from within an async context")
 
         # Create event handler
         self._event_handler = _ConfigFileEventHandler(
@@ -127,8 +124,7 @@ class ConfigWatcher:
         if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
             logger.debug(
-                f"Config file changed again, resetting debounce timer "
-                f"({self.debounce_seconds}s)"
+                f"Config file changed again, resetting debounce timer ({self.debounce_seconds}s)"
             )
         else:
             logger.debug(

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class NoBackendAvailableError(Exception):
     """Raised when no healthy backend is available."""
+
     pass
 
 
@@ -26,6 +27,7 @@ class Backend:
 
     Tracks DNS resolution state, failure count, and original configuration order.
     """
+
     host: str  # Original hostname or IP
     port: int
     host_type: str = "domain"  # "ip" or "domain"
@@ -36,13 +38,14 @@ class Backend:
     cooldown_seconds: float = 1800.0  # Cooldown period (default: 30 minutes)
 
     def __repr__(self) -> str:
-        ips_str = ','.join(self.resolved_ips) if self.resolved_ips else 'unresolved'
-        cooldown_str = ''
+        ips_str = ",".join(self.resolved_ips) if self.resolved_ips else "unresolved"
+        cooldown_str = ""
         if self.marked_unavailable_at is not None:
             import time
+
             remaining = self.cooldown_seconds - (time.time() - self.marked_unavailable_at)
             if remaining > 0:
-                cooldown_str = f', cooldown={remaining:.0f}s'
+                cooldown_str = f", cooldown={remaining:.0f}s"
         return f"Backend({self.host}:{self.port}, ips=[{ips_str}], failures={self.consecutive_failures}{cooldown_str})"
 
 
@@ -113,16 +116,14 @@ class BackendPool:
         )
 
         # Start health check if enabled (only for TCP services)
-        if health_check_interval and protocol in ('tcp', 'both'):
+        if health_check_interval and protocol in ("tcp", "both"):
             logger.info(
                 f"[{service_name}] Health check enabled: "
                 f"interval={health_check_interval:.0f}s, timeout={health_check_timeout:.0f}s"
             )
             # Health check task will be started after event loop is running
-        elif health_check_interval and protocol == 'udp':
-            logger.info(
-                f"[{service_name}] Health check disabled for UDP-only service"
-            )
+        elif health_check_interval and protocol == "udp":
+            logger.info(f"[{service_name}] Health check disabled for UDP-only service")
 
     def _is_in_cooldown(self, backend: Backend, current_time: float) -> bool:
         """
@@ -207,11 +208,7 @@ class BackendPool:
                     continue
 
                 # Add to result
-                backend_tuple = (
-                    backend.resolved_ips[0],
-                    backend.port,
-                    backend
-                )
+                backend_tuple = (backend.resolved_ips[0], backend.port, backend)
                 result.append(backend_tuple)
 
             # Log status
@@ -225,7 +222,7 @@ class BackendPool:
                     if not self._all_backends_unavailable:
                         self._all_backends_unavailable = True
                         await self._trigger_event(
-                            event_type='all_backends_unavailable',
+                            event_type="all_backends_unavailable",
                             backend=None,
                             available_count=0,
                         )
@@ -262,7 +259,7 @@ class BackendPool:
 
                 # Trigger backend_recovered event
                 await self._trigger_event(
-                    event_type='backend_recovered',
+                    event_type="backend_recovered",
                     backend=backend,
                 )
 
@@ -300,9 +297,7 @@ class BackendPool:
             if backend.consecutive_failures == 1:
                 # First failure: Clear DNS cache and re-resolve (only for domains)
                 if backend.host_type == "domain":
-                    logger.info(
-                        f"[{self.service_name}] Clearing DNS cache for {backend.host}"
-                    )
+                    logger.info(f"[{self.service_name}] Clearing DNS cache for {backend.host}")
                     await self.dns_resolver.clear_cache_async(backend.host)
                 backend.resolved_ips.clear()
 
@@ -323,7 +318,7 @@ class BackendPool:
 
                 # Trigger backend_failed event
                 await self._trigger_event(
-                    event_type='backend_failed',
+                    event_type="backend_failed",
                     backend=backend,
                 )
 
@@ -350,25 +345,27 @@ class BackendPool:
         async with self._lock:
             backends_info = []
             for idx, backend in enumerate(self.backends):
-                backends_info.append({
-                    'position': idx,
-                    'host': backend.host,
-                    'port': backend.port,
-                    'resolved_ips': backend.resolved_ips,
-                    'failures': backend.consecutive_failures,
-                    'original_index': backend.original_index,
-                })
+                backends_info.append(
+                    {
+                        "position": idx,
+                        "host": backend.host,
+                        "port": backend.port,
+                        "resolved_ips": backend.resolved_ips,
+                        "failures": backend.consecutive_failures,
+                        "original_index": backend.original_index,
+                    }
+                )
 
             return {
-                'service': self.service_name,
-                'total_backends': len(self.backends),
-                'backends': backends_info,
-                'health_check_enabled': self._health_check_task is not None,
+                "service": self.service_name,
+                "total_backends": len(self.backends),
+                "backends": backends_info,
+                "health_check_enabled": self._health_check_task is not None,
             }
 
     async def start_health_check(self) -> None:
         """Start health check task if configured."""
-        if self.health_check_interval and self.protocol in ('tcp', 'both'):
+        if self.health_check_interval and self.protocol in ("tcp", "both"):
             if self._health_check_task is None or self._health_check_task.done():
                 self._health_check_task = asyncio.create_task(self._health_check_loop())
                 logger.info(f"[{self.service_name}] Health check task started")
@@ -408,10 +405,7 @@ class BackendPool:
             raise
 
         except Exception as e:
-            logger.error(
-                f"[{self.service_name}] Health check loop error: {e}",
-                exc_info=True
-            )
+            logger.error(f"[{self.service_name}] Health check loop error: {e}", exc_info=True)
 
     async def _perform_health_check(self) -> None:
         """
@@ -424,14 +418,11 @@ class BackendPool:
         # Get snapshot of backends to check (avoid holding lock during checks)
         async with self._lock:
             backends_to_check = [
-                backend for backend in self.backends
-                if not self._is_in_cooldown(backend, now)
+                backend for backend in self.backends if not self._is_in_cooldown(backend, now)
             ]
 
         if not backends_to_check:
-            logger.debug(
-                f"[{self.service_name}] Health check: all backends in cooldown, skipping"
-            )
+            logger.debug(f"[{self.service_name}] Health check: all backends in cooldown, skipping")
             return
 
         logger.debug(
@@ -500,7 +491,7 @@ class BackendPool:
             logger.error(
                 f"[{self.service_name}] Health check: {backend.host}:{backend.port} "
                 f"unexpected error: {e}",
-                exc_info=True
+                exc_info=True,
             )
 
     async def _trigger_event(
@@ -524,8 +515,7 @@ class BackendPool:
         if available_count is None:
             now = time.time()
             available_count = sum(
-                1 for b in self.backends
-                if b.resolved_ips and not self._is_in_cooldown(b, now)
+                1 for b in self.backends if b.resolved_ips and not self._is_in_cooldown(b, now)
             )
 
         # Build event context

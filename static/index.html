@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Async Relay Configuration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            color: #2c3e50;
+            line-height: 1.6;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* Mobile Overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 998;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #2c3e50;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 999;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 24px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .sidebar-close {
+            display: none;
+            position: absolute;
+            top: 20px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .sidebar-close:hover {
+            opacity: 1;
+        }
+
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .config-source {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .source-config {
+            background: #3498db;
+        }
+
+        .source-ui {
+            background: #e67e22;
+        }
+
+        .service-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        .service-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-left: 3px solid transparent;
+            min-height: 44px;
+            /* Touch target */
+        }
+
+        .service-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .service-item.active {
+            background: rgba(52, 152, 219, 0.2);
+            border-left-color: #3498db;
+        }
+
+        .service-item-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .service-item-meta {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .top-bar {
+            background: white;
+            border-bottom: 1px solid #e1e8ed;
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #2c3e50;
+            cursor: pointer;
+            padding: 8px;
+            margin: -8px 0 -8px -8px;
+            line-height: 1;
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        .top-bar-title {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .top-bar h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+            min-height: 44px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 32px;
+        }
+
+        /* Form Styles */
+        .form-section {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+        }
+
+        .form-section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #ecf0f1;
+        }
+
+        .form-row {
+            margin-bottom: 20px;
+        }
+
+        .form-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #555;
+            margin-bottom: 8px;
+        }
+
+        .form-label .required {
+            color: #e74c3c;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            min-height: 44px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            min-height: 44px;
+        }
+
+        /* Backends List */
+        .backends-list {
+            border: 1px solid #e1e8ed;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .backend-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e1e8ed;
+            background: white;
+            transition: background 0.2s;
+            gap: 12px;
+        }
+
+        .backend-item:last-child {
+            border-bottom: none;
+        }
+
+        .backend-item:hover {
+            background: #f8f9fa;
+        }
+
+        .backend-handle {
+            cursor: grab;
+            color: #95a5a6;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .backend-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            min-height: 40px;
+        }
+
+        .backend-remove {
+            padding: 8px 12px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        .backend-remove:hover {
+            background: #c0392b;
+        }
+
+        .add-backend-btn {
+            width: 100%;
+            padding: 10px;
+            margin-top: 12px;
+            background: #ecf0f1;
+            border: 2px dashed #bdc3c7;
+            border-radius: 6px;
+            color: #7f8c8d;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 44px;
+        }
+
+        .add-backend-btn:hover {
+            background: #e0e6e8;
+            border-color: #95a5a6;
+            color: #2c3e50;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        /* Loading State */
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #95a5a6;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto 12px;
+            border: 3px solid #ecf0f1;
+            border-top-color: #3498db;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #95a5a6;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                transform: translateX(-100%);
+            }
+
+            .sidebar.active {
+                transform: translateX(0);
+            }
+
+            .sidebar-close {
+                display: block;
+            }
+
+            .menu-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .top-bar {
+                padding: 12px 16px;
+            }
+
+            .top-bar h2 {
+                font-size: 16px;
+            }
+
+            .content-area {
+                padding: 16px;
+            }
+
+            .form-section {
+                padding: 20px 16px;
+            }
+
+            .actions {
+                gap: 8px;
+            }
+
+            .btn {
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+
+            .btn-text-mobile-hide {
+                display: none;
+            }
+
+            .btn-text-mobile-show {
+                display: inline !important;
+            }
+
+            .backend-handle {
+                display: none;
+            }
+
+            .backend-item {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .backend-input {
+                flex-basis: 100%;
+                order: 1;
+            }
+
+            .backend-remove {
+                order: 2;
+                flex: 1;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .top-bar h2 {
+                font-size: 14px;
+            }
+
+            .actions {
+                flex-direction: column;
+                width: auto;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Mobile Overlay -->
+        <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="sidebar-close" onclick="closeSidebar()" aria-label="Close sidebar">×</button>
+                <h1>Relay Configuration</h1>
+                <span id="config-source-badge" class="config-source">Loading...</span>
+            </div>
+            <div id="service-list" class="service-list">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <div>Loading services...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="top-bar">
+                <div class="top-bar-title">
+                    <button class="menu-toggle" onclick="toggleSidebar()" aria-label="Toggle menu">☰</button>
+                    <h2 id="current-service-name">Select a Service</h2>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="reloadFromFile()">
+                        <span class="btn-text-mobile-hide">Reload from File</span>
+                        <span class="btn-text-mobile-show" style="display: none;">Reload</span>
+                    </button>
+                    <button class="btn btn-primary" onclick="saveConfiguration()" id="save-btn">
+                        <span class="btn-text-mobile-hide">Save Configuration</span>
+                        <span class="btn-text-mobile-show" style="display: none;">Save</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="content-area" class="content-area">
+                <div class="empty-state">
+                    <h3>No Service Selected</h3>
+                    <p>Select a service from the sidebar to edit its configuration</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentConfig = null;
+        let currentServiceIndex = null;
+
+        // Sidebar control
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+        }
+
+        // Load configuration on page load
+        async function loadConfiguration() {
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+
+                currentConfig = data.config;
+
+                // Update source badge
+                const badge = document.getElementById('config-source-badge');
+                const source = data.source === 'ui_modified' ? 'UI Modified' : 'Config File';
+                badge.textContent = source;
+                badge.className = 'config-source ' + (data.source === 'ui_modified' ? 'source-ui' : 'source-config');
+
+                // Render service list
+                renderServiceList();
+
+            } catch (error) {
+                console.error('Failed to load configuration:', error);
+                showAlert('Failed to load configuration: ' + error.message, 'error');
+            }
+        }
+
+        function renderServiceList() {
+            const listEl = document.getElementById('service-list');
+
+            if (!currentConfig || !currentConfig.services || currentConfig.services.length === 0) {
+                listEl.innerHTML = '<div class="empty-state"><h3>No Services</h3><p>No services configured</p></div>';
+                return;
+            }
+
+            listEl.innerHTML = currentConfig.services.map((service, index) => `
+                <div class="service-item ${index === currentServiceIndex ? 'active' : ''}" 
+                     onclick="selectService(${index})">
+                    <div class="service-item-name">${service.name}</div>
+                    <div class="service-item-meta">
+                        ${service.listen.address}:${service.listen.port} · ${service.protocol || 'both'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectService(index) {
+            currentServiceIndex = index;
+            renderServiceList();
+            renderServiceEditor();
+
+            // Auto-close sidebar on mobile after selection
+            if (window.innerWidth <= 768) {
+                closeSidebar();
+            }
+        }
+
+        function renderServiceEditor() {
+            const contentEl = document.getElementById('content-area');
+            const service = currentConfig.services[currentServiceIndex];
+
+            document.getElementById('current-service-name').textContent = service.name;
+
+            contentEl.innerHTML = `
+                <div id="alert-container"></div>
+                
+                <div class="form-section">
+                    <div class="form-section-title">Basic Settings</div>
+                    
+                    <div class="form-row">
+                        <label class="form-label">Service Name <span class="required">*</span></label>
+                        <input type="text" class="form-input" value="${service.name}" 
+                               onchange="updateService('name', this.value)">
+                    </div>
+                    
+                    <div class="form-row">
+                        <label class="form-label">Protocol</label>
+                        <select class="form-select" onchange="updateService('protocol', this.value)">
+                            <option value="both" ${service.protocol === 'both' || !service.protocol ? 'selected' : ''}>Both (TCP + UDP)</option>
+                            <option value="tcp" ${service.protocol === 'tcp' ? 'selected' : ''}>TCP Only</option>
+                            <option value="udp" ${service.protocol === 'udp' ? 'selected' : ''}>UDP Only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title">Listen Configuration</div>
+                    
+                    <div class="form-row">
+                        <label class="form-label">Listen Address <span class="required">*</span></label>
+                        <input type="text" class="form-input" value="${service.listen.address}" 
+                               onchange="updateService('listen.address', this.value)"
+                               placeholder="0.0.0.0 or ::">
+                    </div>
+                    
+                    <div class="form-row">
+                        <label class="form-label">Listen Port <span class="required">*</span></label>
+                        <input type="number" class="form-input" value="${service.listen.port}" 
+                               onchange="updateService('listen.port', parseInt(this.value))"
+                               min="1" max="65535">
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title">Backend Servers</div>
+                    
+                    <div class="backends-list" id="backends-list">
+                        ${renderBackendsList(service.backends)}
+                    </div>
+                    
+                    <button class="add-backend-btn" onclick="addBackend()">
+                        + Add Backend Server
+                    </button>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title">Advanced Settings</div>
+                    
+                    <div class="form-row">
+                        <label class="form-label">Backend Cooldown (seconds)</label>
+                        <input type="number" class="form-input" value="${service.backend_cooldown || 1800}" 
+                               onchange="updateService('backend_cooldown', parseInt(this.value))"
+                               min="0" placeholder="1800">
+                        <small style="color: #7f8c8d; font-size: 12px; display: block; margin-top: 4px;">
+                            Time to wait before retrying a failed backend (default: 1800)
+                        </small>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderBackendsList(backends) {
+            if (!backends || backends.length === 0) {
+                return '<div style="padding: 20px; text-align: center; color: #95a5a6;">No backends configured</div>';
+            }
+
+            return backends.map((backend, index) => `
+                <div class="backend-item">
+                    <span class="backend-handle">⋮⋮</span>
+                    <input type="text" class="backend-input" value="${backend}"
+                           onchange="updateBackend(${index}, this.value)"
+                           placeholder="host:port or [ipv6]:port">
+                    <button class="backend-remove" onclick="removeBackend(${index})">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function updateService(field, value) {
+            if (field.includes('.')) {
+                const [parent, child] = field.split('.');
+                currentConfig.services[currentServiceIndex][parent][child] = value;
+            } else {
+                currentConfig.services[currentServiceIndex][field] = value;
+            }
+            renderServiceList();
+        }
+
+        function updateBackend(index, value) {
+            currentConfig.services[currentServiceIndex].backends[index] = value;
+        }
+
+        function addBackend() {
+            if (!currentConfig.services[currentServiceIndex].backends) {
+                currentConfig.services[currentServiceIndex].backends = [];
+            }
+            currentConfig.services[currentServiceIndex].backends.push('');
+            renderServiceEditor();
+        }
+
+        function removeBackend(index) {
+            currentConfig.services[currentServiceIndex].backends.splice(index, 1);
+            renderServiceEditor();
+        }
+
+        async function saveConfiguration() {
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentConfig)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Configuration saved successfully!', 'success');
+                    await loadConfiguration();
+                } else {
+                    showAlert('Failed to save: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showAlert('Failed to save configuration: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = window.innerWidth <= 768 ? 'Save' : 'Save Configuration';
+            }
+        }
+
+        async function reloadFromFile() {
+            if (!confirm('Reload configuration from file? Any unsaved UI changes will be lost.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config/reload', { method: 'POST' });
+                const result = await response.json();
+
+                if (response.ok) {
+                    showAlert('Configuration reloaded from file', 'success');
+                    await loadConfiguration();
+                    currentServiceIndex = null;
+                    document.getElementById('content-area').innerHTML = `
+                        <div class="empty-state">
+                            <h3>Configuration Reloaded</h3>
+                            <p>Select a service from the sidebar to edit</p>
+                        </div>
+                    `;
+                    document.getElementById('current-service-name').textContent = 'Select a Service';
+                } else {
+                    showAlert('Failed to reload: ' + (result.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showAlert('Failed to reload configuration: ' + error.message, 'error');
+            }
+        }
+
+        function showAlert(message, type) {
+            const container = document.getElementById('alert-container');
+            if (!container) return;
+
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            container.innerHTML = '';
+            container.appendChild(alert);
+
+            setTimeout(() => alert.remove(), 5000);
+
+            // Scroll to top to show alert
+            const contentArea = document.getElementById('content-area');
+            if (contentArea) {
+                contentArea.scrollTop = 0;
+            }
+        }
+
+        // Initialize
+        loadConfiguration();
+
+        // Responsive text updates on resize
+        window.addEventListener('resize', () => {
+            const isMobile = window.innerWidth <= 768;
+            const saveBtn = document.getElementById('save-btn');
+            if (saveBtn && !saveBtn.disabled) {
+                saveBtn.textContent = isMobile ? 'Save' : 'Save Configuration';
+            }
+        });
+    </script>
+</body>
+
+</html>

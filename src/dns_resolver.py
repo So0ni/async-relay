@@ -62,9 +62,7 @@ class DNSResolver:
                     self.cache.clear()
 
                 if hostnames:
-                    logger.info(
-                        f"DNS cache expired, cleared {len(hostnames)} entries"
-                    )
+                    logger.info(f"DNS cache expired, cleared {len(hostnames)} entries")
 
         except asyncio.CancelledError:
             logger.debug("DNS refresh loop cancelled")
@@ -120,9 +118,7 @@ class DNSResolver:
             if hostname in self.cache:
                 ips, timestamp = self.cache[hostname]
                 if now - timestamp < self.ttl:
-                    logger.debug(
-                        f"DNS cache hit for '{hostname}': {ips}"
-                    )
+                    logger.debug(f"DNS cache hit for '{hostname}': {ips}")
                     return ips.copy()
 
             # Cache miss or expired - resolve
@@ -147,22 +143,16 @@ class DNSResolver:
                 # Cache the result
                 self.cache[hostname] = (ips, now)
 
-                logger.info(
-                    f"DNS resolved '{hostname}' -> {ips}"
-                )
+                logger.info(f"DNS resolved '{hostname}' -> {ips}")
                 return ips.copy()
 
             except (socket.gaierror, OSError) as e:
-                logger.error(
-                    f"DNS resolution failed for '{hostname}': {e}"
-                )
+                logger.error(f"DNS resolution failed for '{hostname}': {e}")
 
                 # Return stale cache if available
                 if hostname in self.cache:
                     stale_ips, _ = self.cache[hostname]
-                    logger.warning(
-                        f"Using stale DNS cache for '{hostname}': {stale_ips}"
-                    )
+                    logger.warning(f"Using stale DNS cache for '{hostname}': {stale_ips}")
                     return stale_ips.copy()
 
                 return []
@@ -201,6 +191,6 @@ class DNSResolver:
             Dictionary with cache statistics
         """
         return {
-            'total_entries': len(self.cache),
-            'ttl_seconds': self.ttl,
+            "total_entries": len(self.cache),
+            "ttl_seconds": self.ttl,
         }

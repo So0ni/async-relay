@@ -53,3 +53,6 @@ htmlcov/
 
 # Config (keep example, ignore actual config)
 config/config.yaml
+config/config.runtime.yaml
+config/.config.runtime.tmp
+config/config.test.yaml

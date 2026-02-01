@@ -18,6 +18,10 @@ A high-performance TCP/UDP relay service with automatic failover, built with Pyt
 - 📝 **Comprehensive Logging**: Detailed logging of all key events
 - ⚙️ **Flexible Configuration**: YAML-based configuration with protocol selection (tcp/udp/both)
 - 🔥 **Hot Reload**: Configuration file changes are automatically detected and applied (10s debounce)
+- 🎛️ **Web UI Management** (Optional): Web-based configuration interface with runtime modifications
+  - Runtime configuration changes (no restart required)
+  - Config file remains authoritative (manual edits override UI changes)
+  - Optional HTTP Basic Authentication
 
 ## Requirements
 
@@ -73,6 +77,16 @@ pip install -r requirements.txt
 Create a configuration file in YAML format (see [config/config.yaml](config/config.yaml) for example):
 
 ```yaml
+# Optional: Enable Web UI for runtime configuration management
+web_ui:
+  enabled: true              # Enable Web UI (default: false)
+  listen_address: "127.0.0.1" # Bind address (default: 127.0.0.1)
+  port: 8088                 # Web UI port (default: 8088)
+  auth:                      # Optional HTTP Basic Auth
+    enabled: false
+    username: "admin"
+    password: "changeme"
+
 services:
   - name: "web-proxy"
     protocol: "both"     # tcp, udp, or both (default: both)
@@ -98,6 +112,25 @@ services:
 ```
 
 ### Configuration Options
+
+#### Web UI (Optional)
+
+- `web_ui`: Web management interface configuration
+  - `enabled`: Enable/disable Web UI (default: `false`)
+  - `listen_address`: Address to bind to (default: `127.0.0.1`)
+  - `port`: Port to listen on (default: `8088`)
+  - `auth`: HTTP Basic Authentication (optional)
+    - `enabled`: Enable authentication (default: `false`)
+    - `username`: Basic auth username
+    - `password`: Basic auth password
+
+**How Web UI works:**
+- UI modifications are saved to `config.runtime.yaml`
+- If `config.yaml` is manually edited, it automatically overrides `config.runtime.yaml`
+- Hash comparison ensures config file is always the authoritative source
+- Provides REST API for programmatic configuration management
+
+#### Services
 
 - `services`: List of relay services to run
   - `name`: Service identifier (used in logs)

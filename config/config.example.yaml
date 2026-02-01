@@ -1,5 +1,18 @@
 # TCP/UDP Relay Configuration
 
+# Web UI Configuration (optional)
+# When enabled, provides a web interface for runtime configuration management
+# Modifications made via UI are saved to config.runtime.yaml
+# If config.yaml is modified manually, it will override config.runtime.yaml
+web_ui:
+  enabled: false              # Enable/disable Web UI (default: false)
+  listen_address: "127.0.0.1" # Address to bind to (default: 127.0.0.1, localhost only)
+  port: 8088                  # Port to listen on (default: 8088)
+  auth:                       # HTTP Basic Authentication (optional)
+    enabled: false            # Enable authentication (default: false)
+    username: "admin"         # Username for Basic Auth
+    password: "changeme"      # Password for Basic Auth
+
 services:
   # Web proxy example - forwards both TCP and UDP on port 8080
   - name: "web-proxy"

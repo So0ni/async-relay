@@ -12,6 +12,7 @@ from src.config_watcher import ConfigWatcher
 from src.dns_resolver import DNSResolver
 from src.event_hook import EventHook
 from src.relay_service import RelayService
+from src.runtime_config import RuntimeConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class ServiceManager:
         self,
         config: Config,
         config_path: str | None = None,
+        runtime_config_manager: RuntimeConfigManager | None = None,
         enable_reload: bool = True,
         reload_delay: float = 10.0,
     ):
@@ -47,6 +49,7 @@ class ServiceManager:
         Args:
             config: Application configuration
             config_path: Path to config file (for hot reload)
+            runtime_config_manager: Runtime config manager (for Web UI)
             enable_reload: Enable configuration hot reload
             reload_delay: Debounce delay in seconds for config reload
         """
@@ -58,10 +61,14 @@ class ServiceManager:
 
         # Config reload support
         self._config_path = config_path
+        self._runtime_config_manager = runtime_config_manager
         self._enable_reload = enable_reload and config_path is not None
         self._reload_delay = reload_delay
         self._config_watcher: ConfigWatcher | None = None
         self._reload_lock = asyncio.Lock()
+
+        # Web UI server (optional)
+        self._web_ui_server: Any | None = None  # Avoid circular import, set in start()
 
         logger.info("Service manager initialized")
 
@@ -127,8 +134,7 @@ class ServiceManager:
 
             except Exception as e:
                 logger.error(
-                    f"Failed to create service '{service_config.name}': {e}",
-                    exc_info=True
+                    f"Failed to create service '{service_config.name}': {e}", exc_info=True
                 )
                 raise
 
@@ -146,11 +152,27 @@ class ServiceManager:
         for service in self.services:
             await service.pool.start_health_check()
 
+        # Start Web UI server if enabled
+        if self.config.web_ui.enabled:
+            # Import here to avoid circular import
+            from src.web_ui import WebUIServer
+
+            if not self._runtime_config_manager:
+                logger.warning("Web UI enabled but no runtime config manager provided, disabling")
+            else:
+                self._web_ui_server = WebUIServer(
+                    service_manager=self,
+                    runtime_config_manager=self._runtime_config_manager,
+                    listen_address=self.config.web_ui.listen_address,
+                    port=self.config.web_ui.port,
+                    auth_enabled=self.config.web_ui.auth_enabled,
+                    username=self.config.web_ui.username,
+                    password=self.config.web_ui.password,
+                )
+                await self._web_ui_server.start()
+
         # Start all services
-        service_tasks = [
-            asyncio.create_task(service.start())
-            for service in self.services
-        ]
+        service_tasks = [asyncio.create_task(service.start()) for service in self.services]
 
         logger.info(f"Started {len(self.services)} service(s)")
 
@@ -172,6 +194,11 @@ class ServiceManager:
     async def _stop_all_services(self) -> None:
         """Stop all services and cleanup resources."""
         logger.info("Stopping all services")
+
+        # Stop Web UI server
+        if self._web_ui_server:
+            await self._web_ui_server.stop()
+            self._web_ui_server = None
 
         # Stop config watcher
         if self._config_watcher:
@@ -203,7 +230,7 @@ class ServiceManager:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 loop.add_signal_handler(
                     sig,
-                    lambda s=sig: signal_handler(signal.Signals(s).name)  # type: ignore[misc]
+                    lambda s=sig: signal_handler(signal.Signals(s).name),  # type: ignore[misc]
                 )
             logger.debug("Signal handlers registered")
         except NotImplementedError:
@@ -220,17 +247,19 @@ class ServiceManager:
         services_status = []
 
         for service in self.services:
-            services_status.append({
-                'name': service.name,
-                'listen': f"{service.listen_addr}:{service.listen_port}",
-                'stats': service.stats.copy(),
-                'backend_pool': await service.pool.get_status(),
-            })
+            services_status.append(
+                {
+                    "name": service.name,
+                    "listen": f"{service.listen_addr}:{service.listen_port}",
+                    "stats": service.stats.copy(),
+                    "backend_pool": await service.pool.get_status(),
+                }
+            )
 
         return {
-            'total_services': len(self.services),
-            'dns_cache': self.dns_resolver.get_cache_stats(),
-            'services': services_status,
+            "total_services": len(self.services),
+            "dns_cache": self.dns_resolver.get_cache_stats(),
+            "services": services_status,
         }
 
     def _start_config_watcher(self) -> None:
@@ -245,26 +274,21 @@ class ServiceManager:
         )
         self._config_watcher.start()
 
-        logger.info(
-            f"Config file watcher enabled (reload-delay: {self._reload_delay}s)"
-        )
+        logger.info(f"Config file watcher enabled (reload-delay: {self._reload_delay}s)")
 
     async def _on_config_change(self) -> None:
         """Callback invoked when config file changes."""
         try:
             await self.reload_config()
         except Exception as e:
-            logger.error(
-                f"Failed to reload configuration: {e}",
-                exc_info=True
-            )
+            logger.error(f"Failed to reload configuration: {e}", exc_info=True)
 
     async def reload_config(self) -> None:
         """
         Reload configuration from file and apply changes.
 
         This method:
-        1. Loads and validates new configuration
+        1. Loads and validates new configuration (via RuntimeConfigManager if available)
         2. Compares with current configuration
         3. Restarts only modified services
         4. Keeps unchanged services running
@@ -274,15 +298,15 @@ class ServiceManager:
             logger.info(f"Loading configuration from: {self._config_path}")
 
             try:
-                # Load new configuration
-                new_config = load_config(self._config_path)  # type: ignore[arg-type]
+                # Load new configuration via RuntimeConfigManager if available
+                if self._runtime_config_manager:
+                    new_config = self._runtime_config_manager.load_active_config()
+                else:
+                    new_config = load_config(self._config_path)  # type: ignore[arg-type]
                 logger.info("Configuration parsed successfully")
 
             except Exception as e:
-                logger.error(
-                    f"Failed to load configuration: {e}",
-                    exc_info=True
-                )
+                logger.error(f"Failed to load configuration: {e}", exc_info=True)
                 logger.error("Configuration validation failed, keeping current config")
                 return
 
@@ -481,8 +505,7 @@ class ServiceManager:
 
             except Exception as e:
                 logger.error(
-                    f"Failed to apply changes to service '{comparison.name}': {e}",
-                    exc_info=True
+                    f"Failed to apply changes to service '{comparison.name}': {e}", exc_info=True
                 )
 
     async def _create_service(self, service_config: ServiceConfig) -> RelayService:
