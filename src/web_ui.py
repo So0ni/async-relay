@@ -73,6 +73,7 @@ class WebUIServer:
         self.app.router.add_put("/api/config", self._handle_update_config)
         self.app.router.add_get("/api/config/source", self._handle_get_source)
         self.app.router.add_post("/api/config/reload", self._handle_reload_config)
+        self.app.router.add_post("/api/test-backend", self._handle_test_backend)
 
         # Start server
         self.runner = web.AppRunner(self.app)
@@ -187,6 +188,113 @@ class WebUIServer:
             )
         except Exception as e:
             logger.error(f"Failed to reload config: {e}", exc_info=True)
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_test_backend(self, request: web.Request) -> web.Response:
+        """Test TCP connectivity to a backend server."""
+        try:
+            import asyncio
+            import socket
+            import time
+
+            # Parse request
+            data = await request.json()
+            backend = data.get("backend", "")
+
+            if not backend:
+                return web.json_response({"error": "Backend address required"}, status=400)
+
+            # Parse host:port
+            try:
+                # Handle IPv6 format [host]:port
+                if backend.startswith("["):
+                    end_bracket = backend.find("]")
+                    if end_bracket == -1:
+                        raise ValueError("Invalid IPv6 format")
+                    host = backend[1:end_bracket]
+                    port_str = backend[end_bracket + 2 :]  # Skip ']:'
+                else:
+                    # IPv4 or domain format
+                    parts = backend.rsplit(":", 1)
+                    if len(parts) != 2:
+                        raise ValueError("Invalid backend format (expected host:port)")
+                    host, port_str = parts
+
+                port = int(port_str)
+                if not (1 <= port <= 65535):
+                    raise ValueError("Port must be between 1 and 65535")
+
+            except ValueError as e:
+                return web.json_response(
+                    {"error": f"Invalid backend format: {e}"}, status=400
+                )
+
+            # Perform TCP connection test
+            start_time = time.time()
+
+            try:
+                # Resolve DNS if needed
+                try:
+                    addr_info = await asyncio.get_event_loop().getaddrinfo(
+                        host, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
+                    )
+                    if not addr_info:
+                        return web.json_response(
+                            {"success": False, "error": "DNS resolution failed"}, status=200
+                        )
+
+                    # Use first resolved address
+                    resolved_host = addr_info[0][4][0]
+
+                except Exception as e:
+                    return web.json_response(
+                        {"success": False, "error": f"DNS error: {e}"}, status=200
+                    )
+
+                # Test TCP connection
+                try:
+                    reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(resolved_host, port), timeout=5.0
+                    )
+
+                    # Successfully connected
+                    latency_ms = round((time.time() - start_time) * 1000, 2)
+
+                    # Close connection
+                    writer.close()
+                    await writer.wait_closed()
+
+                    return web.json_response(
+                        {
+                            "success": True,
+                            "latency_ms": latency_ms,
+                            "message": f"Connected to {host}:{port}",
+                        }
+                    )
+
+                except TimeoutError:
+                    return web.json_response(
+                        {"success": False, "error": "Connection timeout (5s)"}, status=200
+                    )
+                except ConnectionRefusedError:
+                    return web.json_response(
+                        {"success": False, "error": "Connection refused"}, status=200
+                    )
+                except Exception as e:
+                    return web.json_response(
+                        {"success": False, "error": f"Connection error: {e}"}, status=200
+                    )
+
+            except Exception as e:
+                logger.error(f"Backend test error: {e}", exc_info=True)
+                return web.json_response(
+                    {"success": False, "error": f"Test failed: {e}"}, status=200
+                )
+
+        except json.JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON in request body"}, status=400)
+        except Exception as e:
+            logger.error(f"Failed to test backend: {e}", exc_info=True)
             return web.json_response({"error": str(e)}, status=500)
 
     def _get_ui_html(self) -> str:

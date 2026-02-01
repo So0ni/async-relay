@@ -361,6 +361,47 @@
             background: #c0392b;
         }
 
+        .backend-test {
+            padding: 8px 12px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            min-width: 60px;
+            min-height: 44px;
+            white-space: nowrap;
+        }
+
+        .backend-test:hover:not(:disabled) {
+            background: #229954;
+        }
+
+        .backend-test:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .backend-test.testing {
+            background: #95a5a6;
+        }
+
+        .backend-test.success {
+            background: #27ae60;
+        }
+
+        .backend-test.failure {
+            background: #e74c3c;
+        }
+
+        .backend-test-result {
+            font-size: 11px;
+            margin-left: 6px;
+            font-weight: 500;
+        }
+
         .add-backend-btn {
             width: 100%;
             padding: 10px;
@@ -513,8 +554,14 @@
                 order: 1;
             }
 
-            .backend-remove {
+            .backend-test {
                 order: 2;
+                flex: 1;
+                min-width: 70px;
+            }
+
+            .backend-remove {
+                order: 3;
                 flex: 1;
             }
         }
@@ -736,15 +783,76 @@
                 return '<div style="padding: 20px; text-align: center; color: #95a5a6;">No backends configured</div>';
             }
 
+            const service = currentConfig.services[currentServiceIndex];
+            const protocol = service.protocol || 'both';
+            const showTestButton = protocol === 'tcp' || protocol === 'both';
+
             return backends.map((backend, index) => `
                 <div class="backend-item">
                     <span class="backend-handle">⋮⋮</span>
                     <input type="text" class="backend-input" value="${backend}"
                            onchange="updateBackend(${index}, this.value)"
                            placeholder="host:port or [ipv6]:port">
+                    ${showTestButton ? `
+                        <button class="backend-test" id="test-btn-${index}" onclick="testBackend(${index})">
+                            Test
+                        </button>
+                    ` : ''}
                     <button class="backend-remove" onclick="removeBackend(${index})">Remove</button>
                 </div>
             `).join('');
+        }
+
+        async function testBackend(index) {
+            const backend = currentConfig.services[currentServiceIndex].backends[index];
+            const btn = document.getElementById(`test-btn-${index}`);
+
+            if (!backend || !backend.trim()) {
+                showAlert('Please enter a backend address first', 'error');
+                return;
+            }
+
+            // Update button state
+            btn.disabled = true;
+            btn.className = 'backend-test testing';
+            btn.textContent = 'Testing...';
+
+            try {
+                const response = await fetch('/api/test-backend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ backend: backend.trim() })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    btn.className = 'backend-test success';
+                    btn.innerHTML = `✓ ${result.latency_ms}ms`;
+                    setTimeout(() => {
+                        btn.className = 'backend-test';
+                        btn.textContent = 'Test';
+                        btn.disabled = false;
+                    }, 3000);
+                } else {
+                    btn.className = 'backend-test failure';
+                    btn.innerHTML = `✗ ${result.error}`;
+                    setTimeout(() => {
+                        btn.className = 'backend-test';
+                        btn.textContent = 'Test';
+                        btn.disabled = false;
+                    }, 5000);
+                }
+            } catch (error) {
+                btn.className = 'backend-test failure';
+                btn.innerHTML = `✗ Failed`;
+                setTimeout(() => {
+                    btn.className = 'backend-test';
+                    btn.textContent = 'Test';
+                    btn.disabled = false;
+                }, 3000);
+                console.error('Backend test error:', error);
+            }
         }
 
         function updateService(field, value) {
