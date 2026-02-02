@@ -9,11 +9,13 @@ A high-performance TCP/UDP relay service with automatic failover, built with Pyt
 - 🔄 **Automatic Failover**: Sequential backend connection attempts with intelligent failure handling
 - 🌐 **IPv4/IPv6 Compatible**: Full support for both IPv4 and IPv6 addresses
 - 🔍 **DNS Resolution**: Automatic domain name resolution with hourly cache refresh
+- ❤️‍🩹 **Health Checks** (Optional): Periodic TCP probes for proactive backend recovery
 - 💪 **Smart Failure Recovery**:
   - First failure: Clear DNS cache and retry
   - Second failure: Move backend to end of queue and enter cooldown period
   - Backend cooldown: Failed backends are temporarily skipped (configurable, default: 30 minutes)
   - Automatic recovery: Backends are retried after cooldown expires or on successful reconnection
+- 🪝 **Event Hooks** (Optional): Run scripts on backend_failed/all_backends_unavailable/backend_recovered
 - 🛡️ **Resource Management**: Proper connection cleanup and timeout handling
 - 📝 **Comprehensive Logging**: Detailed logging of all key events
 - ⚙️ **Flexible Configuration**: YAML-based configuration with protocol selection (tcp/udp/both)
@@ -27,6 +29,7 @@ A high-performance TCP/UDP relay service with automatic failover, built with Pyt
 
 - Python 3.11 or higher
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
+- Runtime deps include `pyyaml`, `watchdog`, `aiohttp`, and `aiohttp-basicauth` (see `pyproject.toml`)
 
 ## Quick Start
 
@@ -40,10 +43,11 @@ cd async-relay
 uv sync
 
 # Edit configuration
+cp config/config.example.yaml config/config.yaml
 vim config/config.yaml
 
 # Run the service
-uv run async-relay -c config/config.yaml
+uv run relay -c config/config.yaml
 ```
 
 ## Installation
@@ -74,7 +78,7 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Create a configuration file in YAML format (see [config/config.yaml](config/config.yaml) for example):
+Create a configuration file in YAML format (see `config/config.example.yaml` for example):
 
 ```yaml
 # Optional: Enable Web UI for runtime configuration management
@@ -99,6 +103,18 @@ services:
       - "[2001:db8::1]:80"         # IPv6 address
       - "backup.example.com:80"    # Backup backend
     backend_cooldown: 1800  # Optional: cooldown period in seconds (default: 1800 = 30 min)
+    health_check:        # Optional: proactive TCP health checks
+      enabled: true
+      interval: 60       # seconds (default: 60)
+      timeout: 5         # seconds (default: 5)
+    event_hook:          # Optional: run a command on backend state changes
+      command: "/usr/local/bin/alert-handler"
+      args: []
+      events:
+        - backend_failed
+        - all_backends_unavailable
+        - backend_recovered
+      timeout: 30
 
   - name: "dns-forward"
     protocol: "udp"      # Only forward UDP traffic
@@ -145,6 +161,16 @@ services:
     - Backends that fail twice are marked unavailable and skipped for this duration
     - Set to 0 to disable cooldown (not recommended)
     - Recommended values: 300-600 for DNS/critical services, 1800-3600 for web services
+  - `health_check`: (Optional) Proactive TCP health checks
+    - `enabled`: Enable health checks (default: `false`)
+    - `interval`: Check interval in seconds (default: `60`)
+    - `timeout`: Per-check timeout in seconds (default: `5`, must be <= interval)
+    - Note: Health checks are ignored for UDP-only services
+  - `event_hook`: (Optional) Execute a command on backend state changes
+    - `command`: Command path (binary or script)
+    - `args`: Command arguments (list)
+    - `events`: Event list (backend_failed, all_backends_unavailable, backend_recovered)
+    - `timeout`: Execution timeout in seconds (default: `30`)
 
 ## Usage
 
@@ -152,7 +178,7 @@ services:
 
 Start the service:
 ```bash
-uv run async-relay -c config/config.yaml
+uv run relay -c config/config.yaml
 ```
 
 Or use the module directly:
@@ -169,7 +195,7 @@ python -m src -c config/config.yaml
 ### Command-line options
 
 ```bash
-uv run async-relay --help
+uv run relay --help
 
 options:
   -h, --help            show this help message and exit
@@ -187,17 +213,17 @@ options:
 
 Start with custom config:
 ```bash
-uv run async-relay -c /path/to/config.yaml
+uv run relay -c /path/to/config.yaml
 ```
 
 Enable debug logging:
 ```bash
-uv run async-relay --log-level DEBUG
+uv run relay --log-level DEBUG
 ```
 
 Run in development mode:
 ```bash
-uv run --dev async-relay -c config/config.yaml
+uv run --dev relay -c config/config.yaml
 ```
 
 ## Architecture
@@ -303,6 +329,7 @@ Log levels:
 - Minimal overhead per connection
 - **Backend cooldown reduces timeout overhead**: Failed backends are skipped during cooldown, saving up to 5 seconds per request
 - **Smart DNS caching**: 1-hour TTL with automatic refresh, cleared on first failure
+- **Health checks**: Optional TCP probes keep backend state warm without client traffic
 
 ## Limitations
 
@@ -360,10 +387,13 @@ async-relay/
 │   │   ├── models.py            # Configuration models
 │   │   ├── runtime.py           # Runtime config manager
 │   │   └── watcher.py           # Config watcher
+│   ├── static/
+│   │   └── index.html            # Web UI static assets
 │   └── web/
 │       └── web_ui.py            # Web UI server
 ├── config/
-│   └── config.yaml          # Configuration file
+│   ├── config.example.yaml  # Example configuration
+│   └── config.yaml          # Active configuration (create from example)
 ├── pyproject.toml           # Project metadata and dependencies
 ├── requirements.txt         # Pip fallback
 ├── LICENSE
@@ -385,6 +415,9 @@ Contributions are welcome! Please ensure:
 - Check if ports are already in use: `netstat -tuln | grep <port>`
 - Verify configuration file syntax
 - Check file permissions
+### Web UI not loading
+- Ensure `web_ui.enabled` is true and port is reachable
+- Check if `src/static/index.html` is present in your installation
 
 ### Backends not connecting
 - Verify backend addresses are reachable
