@@ -1,11 +1,11 @@
 # async-relay
 
-A high-performance TCP/UDP relay service with automatic failover, built with Python's `asyncio` and `uvloop`.
+A reliable and intelligent TCP/UDP relay service with automatic failover, built with Python's `asyncio`.
 
 ## Features
 
 - 🚀 **Dual Protocol Support**: Simultaneously forwards both TCP and UDP traffic on the same port (configurable)
-- ⚡ **High Performance**: Built with `asyncio` and `uvloop` for 2-4x performance improvement
+- ⚡ **Efficient Concurrency**: Leverages `asyncio` and `uvloop` for robust asynchronous I/O handling
 - 🔄 **Automatic Failover**: Sequential backend connection attempts with intelligent failure handling
 - 🌐 **IPv4/IPv6 Compatible**: Full support for both IPv4 and IPv6 addresses
 - 🔍 **DNS Resolution**: Automatic domain name resolution with hourly cache refresh
@@ -321,9 +321,9 @@ Log levels:
 - `WARNING`: Connection failures and issues
 - `ERROR`: Critical errors
 
-## Performance Considerations
+## Efficiency & Reliability Considerations
 
-- Uses `uvloop` for 2-4x better performance than standard asyncio
+- Uses `uvloop` for optimized event loop performance in Python environment
 - Efficient buffer sizes (64KB for TCP, standard for UDP)
 - Concurrent connection handling
 - Minimal overhead per connection
