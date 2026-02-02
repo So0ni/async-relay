@@ -6,8 +6,8 @@ import logging
 from aiohttp import web
 from aiohttp_basicauth import BasicAuthMiddleware  # type: ignore[import-untyped]
 
-from src.runtime_config import RuntimeConfigManager
-from src.service_manager import ServiceManager
+from src.app.service_manager import ServiceManager
+from src.config.runtime import RuntimeConfigManager
 
 logger = logging.getLogger(__name__)
 

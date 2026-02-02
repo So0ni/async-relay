@@ -347,12 +347,21 @@ async-relay/
 ├── src/
 │   ├── __init__.py
 │   ├── __main__.py          # Entry point for python -m src
-│   ├── main.py              # Main application
-│   ├── config.py            # Configuration loader
-│   ├── dns_resolver.py      # DNS resolver with caching
-│   ├── backend_pool.py      # Backend pool management
-│   ├── relay_service.py     # TCP/UDP relay service
-│   └── service_manager.py   # Service coordinator
+│   ├── cli.py               # CLI entry point
+│   ├── app/
+│   │   └── service_manager.py   # Service coordinator
+│   ├── core/
+│   │   ├── backend_pool.py      # Backend pool management
+│   │   ├── dns_resolver.py      # DNS resolver with caching
+│   │   ├── event_hook.py        # Event hook runner
+│   │   └── relay_service.py     # TCP/UDP relay service
+│   ├── config/
+│   │   ├── loader.py            # Configuration loader
+│   │   ├── models.py            # Configuration models
+│   │   ├── runtime.py           # Runtime config manager
+│   │   └── watcher.py           # Config watcher
+│   └── web/
+│       └── web_ui.py            # Web UI server
 ├── config/
 │   └── config.yaml          # Configuration file
 ├── pyproject.toml           # Project metadata and dependencies

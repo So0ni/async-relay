@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from src.config import parse_backend
-from src.dns_resolver import DNSResolver
-from src.event_hook import EventContext, EventHook, EventType
+from src.config.loader import parse_backend
+from src.core.dns_resolver import DNSResolver
+from src.core.event_hook import EventContext, EventHook, EventType
 
 logger = logging.getLogger(__name__)
 

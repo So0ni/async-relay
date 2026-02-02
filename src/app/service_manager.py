@@ -6,13 +6,14 @@ import signal
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from src.backend_pool import BackendPool
-from src.config import Config, ServiceConfig, load_config
-from src.config_watcher import ConfigWatcher
-from src.dns_resolver import DNSResolver
-from src.event_hook import EventHook
-from src.relay_service import RelayService
-from src.runtime_config import RuntimeConfigManager
+from src.config.loader import load_config
+from src.config.models import Config, ServiceConfig
+from src.config.runtime import RuntimeConfigManager
+from src.config.watcher import ConfigWatcher
+from src.core.backend_pool import BackendPool
+from src.core.dns_resolver import DNSResolver
+from src.core.event_hook import EventHook
+from src.core.relay_service import RelayService
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class ServiceManager:
         # Start Web UI server if enabled
         if self.config.web_ui.enabled:
             # Import here to avoid circular import
-            from src.web_ui import WebUIServer
+            from src.web.web_ui import WebUIServer
 
             if not self._runtime_config_manager:
                 logger.warning("Web UI enabled but no runtime config manager provided, disabling")

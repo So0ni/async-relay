@@ -7,7 +7,8 @@ from typing import Any
 
 import yaml
 
-from src.config import Config, load_config
+from src.config.loader import load_config
+from src.config.models import Config
 
 logger = logging.getLogger(__name__)
 

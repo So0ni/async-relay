@@ -14,7 +14,7 @@ try:
 except ImportError:
     UVLOOP_AVAILABLE = False
 
-from src.service_manager import ServiceManager
+from src.app.service_manager import ServiceManager
 
 
 def setup_logging(log_level: str = "INFO") -> None:
@@ -114,7 +114,7 @@ async def main() -> int:
         logger.info(f"Loading configuration from {config_path.absolute()}")
 
         # Create runtime config manager
-        from src.runtime_config import RuntimeConfigManager
+        from src.config.runtime import RuntimeConfigManager
 
         runtime_config_manager = RuntimeConfigManager(str(config_path.absolute()))
 

@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-async-relay = "src.main:run"
+relay = "src.cli:run"
 
 [project.urls]
 Homepage = "https://github.com/So0ni/async-relay"
@@ -52,6 +52,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+include = ["src/static/**"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/static/**"]
 
 [tool.ruff]
 line-length = 100

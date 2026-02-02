@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Any, Literal
 
-from src.backend_pool import BackendPool
+from src.core.backend_pool import BackendPool
 
 logger = logging.getLogger(__name__)
 
