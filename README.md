@@ -274,7 +274,7 @@ The service uses a sequential failover strategy with intelligent cooldown:
    - **After cooldown**: Backend is automatically eligible for retry
    - **On success**: Cooldown status is immediately cleared
 4. All available backends are tried before giving up
-5. **Fallback**: If all backends are in cooldown, they are tried anyway to prevent complete service failure
+5. **Fallback**: If all backends are in cooldown (or unresolved), connection attempts are rejected until a backend exits cooldown
 
 **Example behavior:**
 ```
